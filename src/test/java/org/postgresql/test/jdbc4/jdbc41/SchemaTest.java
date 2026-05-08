@@ -6,19 +6,22 @@
 package org.postgresql.test.jdbc4.jdbc41;
 
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.postgresql.PGProperty;
 import org.postgresql.test.TestUtil;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -29,49 +32,67 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.Properties;
 
-public class SchemaTest {
+class SchemaTest {
   private Connection conn;
-  private boolean dropUserSchema;
+  private static boolean dropUserSchema;
 
-  @Before
-  public void setUp() throws Exception {
-    conn = TestUtil.openDB();
-    Statement stmt = conn.createStatement();
-    try {
-      stmt.execute("CREATE SCHEMA " + TestUtil.getUser());
-      dropUserSchema = true;
-    } catch (SQLException e) {
-      /* assume schema existed */
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection conn = TestUtil.openDB()) {
+      Statement stmt = conn.createStatement();
+      try {
+        stmt.execute("CREATE SCHEMA " + TestUtil.getUser());
+        dropUserSchema = true;
+      } catch (SQLException e) {
+        /* assume schema existed */
+      }
+      stmt.execute("CREATE SCHEMA schema1");
+      stmt.execute("CREATE SCHEMA schema2");
+      stmt.execute("CREATE SCHEMA \"schema 3\"");
+      stmt.execute("CREATE SCHEMA \"schema \"\"4\"");
+      stmt.execute("CREATE SCHEMA \"schema '5\"");
+      stmt.execute("CREATE SCHEMA \"schema ,6\"");
+      stmt.execute("CREATE SCHEMA \"UpperCase\"");
+      TestUtil.createTable(conn, "schema1.table1", "id integer");
+      TestUtil.createTable(conn, "schema2.table2", "id integer");
+      TestUtil.createTable(conn, "\"UpperCase\".table3", "id integer");
+      TestUtil.createTable(conn, "schema1.sptest", "id integer");
+      TestUtil.createTable(conn, "schema2.sptest", "id varchar");
+      stmt.close();
     }
-    stmt.execute("CREATE SCHEMA schema1");
-    stmt.execute("CREATE SCHEMA schema2");
-    stmt.execute("CREATE SCHEMA \"schema 3\"");
-    stmt.execute("CREATE SCHEMA \"schema \"\"4\"");
-    stmt.execute("CREATE SCHEMA \"schema '5\"");
-    stmt.execute("CREATE SCHEMA \"schema ,6\"");
-    stmt.execute("CREATE SCHEMA \"UpperCase\"");
-    TestUtil.createTable(conn, "schema1.table1", "id integer");
-    TestUtil.createTable(conn, "schema2.table2", "id integer");
-    TestUtil.createTable(conn, "\"UpperCase\".table3", "id integer");
-    TestUtil.createTable(conn, "schema1.sptest", "id integer");
-    TestUtil.createTable(conn, "schema2.sptest", "id varchar");
   }
 
-  @After
-  public void tearDown() throws SQLException {
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection conn = TestUtil.openDB()) {
+      Statement stmt = conn.createStatement();
+      if (dropUserSchema) {
+        stmt.execute("DROP SCHEMA " + TestUtil.getUser() + " CASCADE");
+      }
+      stmt.execute("DROP SCHEMA schema1 CASCADE");
+      stmt.execute("DROP SCHEMA schema2 CASCADE");
+      stmt.execute("DROP SCHEMA \"schema 3\" CASCADE");
+      stmt.execute("DROP SCHEMA \"schema \"\"4\" CASCADE");
+      stmt.execute("DROP SCHEMA \"schema '5\" CASCADE");
+      stmt.execute("DROP SCHEMA \"schema ,6\"");
+      stmt.execute("DROP SCHEMA \"UpperCase\" CASCADE");
+      stmt.close();
+    }
+  }
+
+  @BeforeEach
+  void setUp() throws Exception {
+    conn = TestUtil.openDB();
+  }
+
+  @AfterEach
+  void tearDown() throws SQLException {
     conn.setAutoCommit(true);
     conn.setSchema(null);
-    Statement stmt = conn.createStatement();
-    if (dropUserSchema) {
-      stmt.execute("DROP SCHEMA " + TestUtil.getUser() + " CASCADE");
-    }
-    stmt.execute("DROP SCHEMA schema1 CASCADE");
-    stmt.execute("DROP SCHEMA schema2 CASCADE");
-    stmt.execute("DROP SCHEMA \"schema 3\" CASCADE");
-    stmt.execute("DROP SCHEMA \"schema \"\"4\" CASCADE");
-    stmt.execute("DROP SCHEMA \"schema '5\" CASCADE");
-    stmt.execute("DROP SCHEMA \"schema ,6\"");
-    stmt.execute("DROP SCHEMA \"UpperCase\" CASCADE");
+    // Clean up objects created by individual test methods
+    TestUtil.execute(conn, "DROP FUNCTION IF EXISTS schema2.check_fun()");
+    TestUtil.execute(conn, "DROP FUNCTION IF EXISTS schema2.check_fun(text)");
+    TestUtil.execute(conn, "DROP TABLE IF EXISTS schema1.check_table");
     TestUtil.closeDB(conn);
   }
 
@@ -79,7 +100,7 @@ public class SchemaTest {
    * Test that what you set is what you get.
    */
   @Test
-  public void testGetSetSchema() throws SQLException {
+  void getSetSchema() throws SQLException {
     conn.setSchema("schema1");
     assertEquals("schema1", conn.getSchema());
     conn.setSchema("schema2");
@@ -99,10 +120,10 @@ public class SchemaTest {
    * objects from other schemas but doesn't prevent to prefix-access to them.
    */
   @Test
-  public void testUsingSchema() throws SQLException {
+  void usingSchema() throws SQLException {
     Statement stmt = conn.createStatement();
     try {
-      try {
+      assertDoesNotThrow(() -> {
         conn.setSchema("schema1");
         stmt.executeQuery(TestUtil.selectSQL("table1", "*"));
         stmt.executeQuery(TestUtil.selectSQL("schema2.table2", "*"));
@@ -132,9 +153,7 @@ public class SchemaTest {
         } catch (SQLException e) {
           // expected
         }
-      } catch (SQLException e) {
-        fail("Could not find expected schema elements: " + e.getMessage());
-      }
+      }, "Could not find expected schema elements: ");
     } finally {
       try {
         stmt.close();
@@ -147,7 +166,7 @@ public class SchemaTest {
    * Test that get schema returns the schema with the highest priority in the search path.
    */
   @Test
-  public void testMultipleSearchPath() throws SQLException {
+  void multipleSearchPath() throws SQLException {
     execute("SET search_path TO schema1,schema2");
     assertEquals("schema1", conn.getSchema());
 
@@ -156,11 +175,10 @@ public class SchemaTest {
   }
 
   @Test
-  public void testSchemaInProperties() throws Exception {
+  void schemaInProperties() throws Exception {
     Properties properties = new Properties();
     properties.setProperty("currentSchema", "schema1");
-    Connection conn = TestUtil.openDB(properties);
-    try {
+    try (Connection conn = TestUtil.openDB(properties)) {
       assertEquals("schema1", conn.getSchema());
 
       Statement stmt = conn.createStatement();
@@ -172,13 +190,11 @@ public class SchemaTest {
       } catch (SQLException e) {
         // expected
       }
-    } finally {
-      TestUtil.closeDB(conn);
     }
   }
 
   @Test
-  public void testSchemaPath$User() throws Exception {
+  public void schemaPath$User() throws Exception {
     execute("SET search_path TO \"$user\",public,schema2");
     assertEquals(TestUtil.getUser(), conn.getSchema());
   }
@@ -196,18 +212,18 @@ public class SchemaTest {
   }
 
   @Test
-  public void testSearchPathPreparedStatementAutoCommitFalse() throws SQLException {
+  void searchPathPreparedStatementAutoCommitFalse() throws SQLException {
     conn.setAutoCommit(false);
-    testSearchPathPreparedStatement();
+    searchPathPreparedStatementAutoCommitTrue();
   }
 
   @Test
-  public void testSearchPathPreparedStatementAutoCommitTrue() throws SQLException {
-    testSearchPathPreparedStatement();
+  void searchPathPreparedStatementAutoCommitTrue() throws SQLException {
+    searchPathPreparedStatement();
   }
 
   @Test
-  public void testSearchPathPreparedStatement() throws SQLException {
+  void searchPathPreparedStatement() throws SQLException {
     execute("set search_path to schema1,public");
     PreparedStatement ps = conn.prepareStatement("select * from sptest");
     for (int i = 0; i < 10; i++) {
@@ -224,30 +240,30 @@ public class SchemaTest {
   }
 
   @Test
-  public void testCurrentSchemaPropertyVisibilityTableDuringFunctionCreation() throws SQLException {
+  void currentSchemaPropertyVisibilityTableDuringFunctionCreation() throws SQLException {
     Properties properties = new Properties();
     properties.setProperty(PGProperty.CURRENT_SCHEMA.getName(), "public,schema1,schema2");
     Connection connection = TestUtil.openDB(properties);
 
-    TestUtil.execute("create table schema1.check_table (test_col text)", connection);
-    TestUtil.execute("insert into schema1.check_table (test_col) values ('test_value')", connection);
-    TestUtil.execute("create or replace function schema2.check_fun () returns text as $$"
+    TestUtil.execute(connection, "create table schema1.check_table (test_col text)");
+    TestUtil.execute(connection, "insert into schema1.check_table (test_col) values ('test_value')");
+    TestUtil.execute(connection, "create or replace function schema2.check_fun () returns text as $$"
         + " select test_col from check_table"
-        + "$$ language sql immutable", connection);
+        + "$$ language sql stable");
     connection.close();
   }
 
   @Test
-  public void testCurrentSchemaPropertyNotVisibilityTableDuringFunctionCreation() throws SQLException {
+  void currentSchemaPropertyNotVisibilityTableDuringFunctionCreation() throws SQLException {
     Properties properties = new Properties();
     properties.setProperty(PGProperty.CURRENT_SCHEMA.getName(), "public,schema2");
 
     try (Connection connection = TestUtil.openDB(properties)) {
-      TestUtil.execute("create table schema1.check_table (test_col text)", connection);
-      TestUtil.execute("insert into schema1.check_table (test_col) values ('test_value')", connection);
-      TestUtil.execute("create or replace function schema2.check_fun (txt text) returns text as $$"
+      TestUtil.execute(connection, "create table schema1.check_table (test_col text)");
+      TestUtil.execute(connection, "insert into schema1.check_table (test_col) values ('test_value')");
+      TestUtil.execute(connection, "create or replace function schema2.check_fun (txt text) returns text as $$"
           + " select test_col from check_table"
-          + "$$ language sql immutable", connection);
+          + "$$ language sql immutable");
     } catch (PSQLException e) {
       String sqlState = e.getSQLState();
       String message = e.getMessage();
@@ -270,24 +286,24 @@ public class SchemaTest {
   }
 
   @Test
-  public void testCurrentSchemaPropertyVisibilityFunction() throws SQLException {
-    testCurrentSchemaPropertyVisibilityTableDuringFunctionCreation();
+  void currentSchemaPropertyVisibilityFunction() throws SQLException {
+    currentSchemaPropertyVisibilityTableDuringFunctionCreation();
     Properties properties = new Properties();
     properties.setProperty(PGProperty.CURRENT_SCHEMA.getName(), "public,schema1,schema2");
     Connection connection = TestUtil.openDB(properties);
 
-    TestUtil.execute("select check_fun()", connection);
+    TestUtil.execute(connection, "select check_fun()");
     connection.close();
   }
 
   @Test
-  public void testCurrentSchemaPropertyNotVisibilityTableInsideFunction() throws SQLException {
-    testCurrentSchemaPropertyVisibilityTableDuringFunctionCreation();
+  void currentSchemaPropertyNotVisibilityTableInsideFunction() throws SQLException {
+    currentSchemaPropertyVisibilityTableDuringFunctionCreation();
     Properties properties = new Properties();
     properties.setProperty(PGProperty.CURRENT_SCHEMA.getName(), "public,schema2");
 
     try (Connection connection = TestUtil.openDB(properties)) {
-      TestUtil.execute("select check_fun()", connection);
+      TestUtil.execute(connection, "select check_fun()");
     } catch (PSQLException e) {
       String sqlState = e.getSQLState();
       String message = e.getMessage();
@@ -307,12 +323,11 @@ public class SchemaTest {
     }
   }
 
-  private void assertColType(PreparedStatement ps, String message, int expected) throws SQLException {
+  private static void assertColType(PreparedStatement ps, String message, int expected) throws SQLException {
     ResultSet rs = ps.executeQuery();
     ResultSetMetaData md = rs.getMetaData();
     int columnType = md.getColumnType(1);
-    assertEquals(message,
-        expected, columnType);
+    assertEquals(expected, columnType, message);
     rs.close();
   }
 

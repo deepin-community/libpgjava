@@ -5,13 +5,15 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import org.postgresql.Driver;
+import org.postgresql.PGProperty;
 import org.postgresql.test.TestUtil;
+import org.postgresql.test.annotations.DisableLogger;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -23,66 +25,41 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
 
-public class LoginTimeoutTest {
-
-  @Before
-  public void setUp() throws Exception {
-    TestUtil.initDriver(); // Set up log levels, etc.
+class LoginTimeoutTest {
+  @Test
+  void intTimeout() throws Exception {
+    testWithLoginTimeout("10");
   }
 
   @Test
-  public void testIntTimeout() throws Exception {
-    Properties props = new Properties();
-    props.setProperty("user", TestUtil.getUser());
-    props.setProperty("password", TestUtil.getPassword());
-    props.setProperty("loginTimeout", "10");
-
-    Connection conn = DriverManager.getConnection(TestUtil.getURL(), props);
-    conn.close();
+  void floatTimeout() throws Exception {
+    testWithLoginTimeout("10.0");
   }
 
   @Test
-  public void testFloatTimeout() throws Exception {
-    Properties props = new Properties();
-    props.setProperty("user", TestUtil.getUser());
-    props.setProperty("password", TestUtil.getPassword());
-    props.setProperty("loginTimeout", "10.0");
-
-    Connection conn = DriverManager.getConnection(TestUtil.getURL(), props);
-    conn.close();
+  void zeroTimeout() throws Exception {
+    testWithLoginTimeout("0");
   }
 
   @Test
-  public void testZeroTimeout() throws Exception {
-    Properties props = new Properties();
-    props.setProperty("user", TestUtil.getUser());
-    props.setProperty("password", TestUtil.getPassword());
-    props.setProperty("loginTimeout", "0");
-
-    Connection conn = DriverManager.getConnection(TestUtil.getURL(), props);
-    conn.close();
+  void negativeTimeout() throws Exception {
+    testWithLoginTimeout("-1");
   }
 
   @Test
-  public void testNegativeTimeout() throws Exception {
-    Properties props = new Properties();
-    props.setProperty("user", TestUtil.getUser());
-    props.setProperty("password", TestUtil.getPassword());
-    props.setProperty("loginTimeout", "-1");
-
-    Connection conn = DriverManager.getConnection(TestUtil.getURL(), props);
-    conn.close();
+  @DisableLogger(Driver.class)
+  void badTimeout() throws Exception {
+    testWithLoginTimeout("zzzz");
   }
 
-  @Test
-  public void testBadTimeout() throws Exception {
+  private static void testWithLoginTimeout(String value) throws SQLException {
     Properties props = new Properties();
-    props.setProperty("user", TestUtil.getUser());
-    props.setProperty("password", TestUtil.getPassword());
-    props.setProperty("loginTimeout", "zzzz");
+    PGProperty.LOGIN_TIMEOUT.set(props, value);
 
-    Connection conn = DriverManager.getConnection(TestUtil.getURL(), props);
-    conn.close();
+    try (Connection conn = TestUtil.openDB(props); ) {
+      assertTrue(conn.isValid(1), () -> "Connection should be valid when connecting with "
+          + PGProperty.LOGIN_TIMEOUT.name() + " = " + value);
+    }
   }
 
   private static class TimeoutHelper implements Runnable {
@@ -131,7 +108,7 @@ public class LoginTimeoutTest {
   }
 
   @Test
-  public void testTimeoutOccurs() throws Exception {
+  void timeoutOccurs() throws Exception {
     // Spawn a helper thread to accept a connection and do nothing with it;
     // this should trigger a timeout.
     TimeoutHelper helper = new TimeoutHelper();
@@ -159,7 +136,7 @@ public class LoginTimeoutTest {
       }
 
       long endTime = System.nanoTime();
-      assertTrue("Connection timed before 2500ms",endTime > startTime + (2500L * 1E6));
+      assertTrue(endTime > startTime + (2500L * 1E6), "Connection timed before 2500ms");
     } finally {
       helper.kill();
     }

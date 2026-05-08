@@ -10,6 +10,7 @@ import org.postgresql.core.Encoding;
 import org.postgresql.core.Oid;
 import org.postgresql.util.ByteConverter;
 import org.postgresql.util.GT;
+import org.postgresql.util.PGbytea;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
 
@@ -49,7 +50,8 @@ import java.util.Map;
  */
 final class ArrayEncoding {
 
-  interface ArrayEncoder<A> {
+  @SuppressWarnings("ExtendsObject")
+  interface ArrayEncoder<A extends Object> {
 
     /**
      * The default array type oid supported by this instance.
@@ -123,6 +125,7 @@ final class ArrayEncoding {
    * @param <A>
    *          Base array type supported.
    */
+  @SuppressWarnings("ExtendsObject")
   private abstract static class AbstractArrayEncoder<A extends Object>
       implements ArrayEncoder<A> {
 
@@ -171,7 +174,7 @@ final class ArrayEncoding {
     int countNulls(A array) {
       int nulls = 0;
       final int arrayLength = Array.getLength(array);
-      for (int i = 0; i < arrayLength; ++i) {
+      for (int i = 0; i < arrayLength; i++) {
         if (Array.get(array, i) == null) {
           ++nulls;
         }
@@ -245,7 +248,7 @@ final class ArrayEncoding {
     @Override
     final int countNulls(N[] array) {
       int count = 0;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (array[i] == null) {
           ++count;
         }
@@ -296,7 +299,7 @@ final class ArrayEncoding {
       final byte[] bytes = new byte[length];
 
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (array[i] == null) {
           ByteConverter.int4(bytes, idx, -1);
           idx += 4;
@@ -322,7 +325,7 @@ final class ArrayEncoding {
      * @param offset
      *          The offset into <i>bytes</i> to write the <i>number</i> value.
      */
-    protected abstract void write(N number, byte[] bytes, int offset);
+    abstract void write(N number, byte[] bytes, int offset);
 
     /**
      * {@inheritDoc}
@@ -330,7 +333,7 @@ final class ArrayEncoding {
     @Override
     public final void appendArray(StringBuilder sb, char delim, N[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i != 0) {
           sb.append(delim);
         }
@@ -352,6 +355,7 @@ final class ArrayEncoding {
    * @param <A>
    *          The primitive array to support.
    */
+  @SuppressWarnings("ExtendsObject")
   private abstract static class FixedSizePrimitiveArrayEncoder<A extends Object>
       extends AbstractArrayEncoder<A> {
 
@@ -408,7 +412,7 @@ final class ArrayEncoding {
     @Override
     final byte[] toSingleDimensionBinaryRepresentation(BaseConnection connection, A array)
         throws SQLException, SQLFeatureNotSupportedException {
-      final int length = ((fieldSize + 4) * Array.getLength(array));
+      final int length = (fieldSize + 4) * Array.getLength(array);
       final byte[] bytes = new byte[length];
 
       write(array, bytes, 0);
@@ -426,7 +430,7 @@ final class ArrayEncoding {
      * @param offset
      *          The offset into <i>bytes</i> to start writing.
      */
-    protected abstract void write(A array, byte[] bytes, int offset);
+    abstract void write(A array, byte[] bytes, int offset);
   }
 
   private static final AbstractArrayEncoder<long[]> LONG_ARRAY = new FixedSizePrimitiveArrayEncoder<long[]>(8, Oid.INT8,
@@ -438,7 +442,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, long[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -453,7 +457,7 @@ final class ArrayEncoding {
     @Override
     protected void write(long[] array, byte[] bytes, int offset) {
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         bytes[idx + 3] = 8;
         ByteConverter.int8(bytes, idx + 4, array[i]);
         idx += 12;
@@ -479,7 +483,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, int[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -494,7 +498,7 @@ final class ArrayEncoding {
     @Override
     protected void write(int[] array, byte[] bytes, int offset) {
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         bytes[idx + 3] = 4;
         ByteConverter.int4(bytes, idx + 4, array[i]);
         idx += 8;
@@ -520,7 +524,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, short[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -535,7 +539,7 @@ final class ArrayEncoding {
     @Override
     protected void write(short[] array, byte[] bytes, int offset) {
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         bytes[idx + 3] = 2;
         ByteConverter.int2(bytes, idx + 4, array[i]);
         idx += 6;
@@ -564,7 +568,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, double[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -582,7 +586,7 @@ final class ArrayEncoding {
     @Override
     protected void write(double[] array, byte[] bytes, int offset) {
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         bytes[idx + 3] = 8;
         ByteConverter.float8(bytes, idx + 4, array[i]);
         idx += 12;
@@ -611,7 +615,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, float[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -629,7 +633,7 @@ final class ArrayEncoding {
     @Override
     protected void write(float[] array, byte[] bytes, int offset) {
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         bytes[idx + 3] = 4;
         ByteConverter.float4(bytes, idx + 4, array[i]);
         idx += 8;
@@ -658,7 +662,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, boolean[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -673,7 +677,7 @@ final class ArrayEncoding {
     @Override
     protected void write(boolean[] array, byte[] bytes, int offset) {
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         bytes[idx + 3] = 1;
         ByteConverter.bool(bytes, idx + 4, array[i]);
         idx += 5;
@@ -715,7 +719,7 @@ final class ArrayEncoding {
       final byte[] bytes = new byte[length];
 
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (array[i] == null) {
           ByteConverter.int4(bytes, idx, -1);
           idx += 4;
@@ -750,7 +754,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, Boolean[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i != 0) {
           sb.append(delim);
         }
@@ -773,7 +777,7 @@ final class ArrayEncoding {
     @Override
     int countNulls(String[] array) {
       int count = 0;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (array[i] == null) {
           ++count;
         }
@@ -813,7 +817,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, String[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -856,7 +860,7 @@ final class ArrayEncoding {
         baos.write(buffer);
 
         final Encoding encoding = connection.getEncoding();
-        for (int i = 0; i < array.length; ++i) {
+        for (int i = 0; i < array.length; i++) {
           final String string = array[i];
           if (string != null) {
             final byte[] encoded;
@@ -893,7 +897,7 @@ final class ArrayEncoding {
         final ByteArrayOutputStream baos = new ByteArrayOutputStream(Math.min(1024, (array.length * 32) + 20));
         final byte[] buffer = new byte[4];
         final Encoding encoding = connection.getEncoding();
-        for (int i = 0; i < array.length; ++i) {
+        for (int i = 0; i < array.length; i++) {
           final String string = array[i];
           if (string != null) {
             final byte[] encoded;
@@ -925,12 +929,6 @@ final class ArrayEncoding {
       Oid.BYTEA_ARRAY) {
 
     /**
-     * The possible characters to use for representing hex binary data.
-     */
-    private final char[] hexDigits = new char[] { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd',
-        'e', 'f' };
-
-    /**
      * {@inheritDoc}
      */
     @Override
@@ -940,7 +938,7 @@ final class ArrayEncoding {
       assert oid == arrayOid;
 
       int length = 20;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         length += 4;
         if (array[i] != null) {
           length += array[i].length;
@@ -971,7 +969,7 @@ final class ArrayEncoding {
     byte[] toSingleDimensionBinaryRepresentation(BaseConnection connection, byte[][] array)
         throws SQLException, SQLFeatureNotSupportedException {
       int length = 0;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         length += 4;
         if (array[i] != null) {
           length += array[i].length;
@@ -989,7 +987,7 @@ final class ArrayEncoding {
     @Override
     int countNulls(byte[][] array) {
       int nulls = 0;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (array[i] == null) {
           ++nulls;
         }
@@ -999,7 +997,7 @@ final class ArrayEncoding {
 
     private void write(byte[][] array, byte[] bytes, int offset) {
       int idx = offset;
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (array[i] != null) {
           ByteConverter.int4(bytes, idx, array[i].length);
           idx += 4;
@@ -1018,21 +1016,14 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, byte[][] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
 
         if (array[i] != null) {
           sb.append("\"\\\\x");
-          for (int j = 0; j < array[i].length; ++j) {
-            byte b = array[i][j];
-
-            // get the value for the left 4 bits (drop sign)
-            sb.append(hexDigits[(b & 0xF0) >>> 4]);
-            // get the value for the right 4 bits
-            sb.append(hexDigits[b & 0x0F]);
-          }
+          PGbytea.appendHexString(sb, array[i], 0, array[i].length);
           sb.append('"');
         } else {
           sb.append("NULL");
@@ -1072,7 +1063,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, Object[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -1097,7 +1088,7 @@ final class ArrayEncoding {
   };
 
   @SuppressWarnings("rawtypes")
-  private static final Map<Class, AbstractArrayEncoder> ARRAY_CLASS_TO_ENCODER = new HashMap<Class, AbstractArrayEncoder>(
+  private static final Map<Class, AbstractArrayEncoder> ARRAY_CLASS_TO_ENCODER = new HashMap<>(
       (int) (14 / .75) + 1);
 
   static {
@@ -1128,7 +1119,7 @@ final class ArrayEncoding {
    *           if <i>array</i> is not a supported type.
    * @see ArrayEncoding.ArrayEncoder#supportBinaryRepresentation(int)
    */
-  @SuppressWarnings({ "unchecked", "rawtypes" })
+  @SuppressWarnings({"unchecked", "rawtypes", "ExtendsObject"})
   public static <A extends Object> ArrayEncoder<A> getArrayEncoder(A array) throws PSQLException {
     final Class<?> arrayClazz = array.getClass();
     Class<?> subClazz = arrayClazz.getComponentType();
@@ -1177,6 +1168,7 @@ final class ArrayEncoding {
    * Wraps an {@link AbstractArrayEncoder} implementation and provides optimized
    * support for 2 dimensions.
    */
+  @SuppressWarnings("ExtendsObject")
   private static final class TwoDimensionPrimitiveArrayEncoder<A extends Object> implements ArrayEncoder<A[]> {
     private final AbstractArrayEncoder<A> support;
 
@@ -1213,7 +1205,7 @@ final class ArrayEncoding {
     @Override
     public void appendArray(StringBuilder sb, char delim, A[] array) {
       sb.append('{');
-      for (int i = 0; i < array.length; ++i) {
+      for (int i = 0; i < array.length; i++) {
         if (i > 0) {
           sb.append(delim);
         }
@@ -1241,7 +1233,7 @@ final class ArrayEncoding {
       final byte[] buffer = new byte[4];
 
       boolean hasNulls = false;
-      for (int i = 0; !hasNulls && i < array.length; ++i) {
+      for (int i = 0; !hasNulls && i < array.length; i++) {
         if (support.countNulls(array[i]) > 0) {
           hasNulls = true;
         }
@@ -1271,7 +1263,7 @@ final class ArrayEncoding {
         ByteConverter.int4(buffer, 0, 1);
         baos.write(buffer);
 
-        for (int i = 0; i < array.length; ++i) {
+        for (int i = 0; i < array.length; i++) {
           baos.write(support.toSingleDimensionBinaryRepresentation(connection, array[i]));
         }
 
@@ -1289,7 +1281,7 @@ final class ArrayEncoding {
    * Wraps an {@link AbstractArrayEncoder} implementation and provides support for
    * 2 or more dimensions using recursion.
    */
-  @SuppressWarnings({ "unchecked", "rawtypes" })
+  @SuppressWarnings({"unchecked", "rawtypes"})
   private static final class RecursiveArrayEncoder implements ArrayEncoder {
 
     private final AbstractArrayEncoder support;
@@ -1336,7 +1328,7 @@ final class ArrayEncoding {
 
       if (depth > 1) {
         sb.append('{');
-        for (int i = 0, j = Array.getLength(array); i < j; ++i) {
+        for (int i = 0, j = Array.getLength(array); i < j; i++) {
           if (i > 0) {
             sb.append(delim);
           }
@@ -1358,7 +1350,7 @@ final class ArrayEncoding {
 
     private boolean hasNulls(Object array, int depth) {
       if (depth > 1) {
-        for (int i = 0, j = Array.getLength(array); i < j; ++i) {
+        for (int i = 0, j = Array.getLength(array); i < j; i++) {
           if (hasNulls(Array.get(array, i), depth - 1)) {
             return true;
           }
@@ -1422,7 +1414,7 @@ final class ArrayEncoding {
         baos.write(buffer);
       }
 
-      for (int i = 0; i < length; ++i) {
+      for (int i = 0; i < length; i++) {
         final Object subArray = Array.get(array, i);
         if (depth > 2) {
           writeArray(connection, buffer, baos, subArray, depth - 1, i == 0);

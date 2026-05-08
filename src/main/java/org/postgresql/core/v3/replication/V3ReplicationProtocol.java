@@ -37,6 +37,7 @@ public class V3ReplicationProtocol implements ReplicationProtocol {
     this.pgStream = pgStream;
   }
 
+  @Override
   public PGReplicationStream startLogical(LogicalReplicationOptions options)
       throws SQLException {
 
@@ -44,6 +45,7 @@ public class V3ReplicationProtocol implements ReplicationProtocol {
     return initializeReplication(query, options, ReplicationType.LOGICAL);
   }
 
+  @Override
   public PGReplicationStream startPhysical(PhysicalReplicationOptions options)
       throws SQLException {
 
@@ -63,6 +65,7 @@ public class V3ReplicationProtocol implements ReplicationProtocol {
         castNonNull(copyDual),
         options.getStartLSNPosition(),
         options.getStatusInterval(),
+        options.getAutomaticFlush(),
         replicationType
     );
   }
@@ -70,7 +73,7 @@ public class V3ReplicationProtocol implements ReplicationProtocol {
   /**
    * START_REPLICATION [SLOT slot_name] [PHYSICAL] XXX/XXX.
    */
-  private String createStartPhysicalQuery(PhysicalReplicationOptions options) {
+  private static String createStartPhysicalQuery(PhysicalReplicationOptions options) {
     StringBuilder builder = new StringBuilder();
     builder.append("START_REPLICATION");
 
@@ -86,7 +89,7 @@ public class V3ReplicationProtocol implements ReplicationProtocol {
   /**
    * START_REPLICATION SLOT slot_name LOGICAL XXX/XXX [ ( option_name [option_value] [, ... ] ) ]
    */
-  private String createStartLogicalQuery(LogicalReplicationOptions options) {
+  private static String createStartLogicalQuery(LogicalReplicationOptions options) {
     StringBuilder builder = new StringBuilder();
     builder.append("START_REPLICATION SLOT ")
         .append(options.getSlotName())

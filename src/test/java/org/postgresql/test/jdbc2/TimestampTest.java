@@ -5,11 +5,11 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import org.postgresql.PGStatement;
 import org.postgresql.core.BaseConnection;
@@ -17,10 +17,14 @@ import org.postgresql.core.ServerVersion;
 import org.postgresql.jdbc.TimestampUtils;
 import org.postgresql.test.TestUtil;
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
+import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -38,10 +42,12 @@ import java.util.TimeZone;
 
 /*
  * Test get/setTimestamp for both timestamp with time zone and timestamp without time zone datatypes
- * TODO: refactor to a property-based testing or paremeterized testing somehow so adding new times
+ * TODO: refactor to a property-based testing or parameterized testing somehow so adding new times
  *  don't require to add constants and setters/getters. JUnit 5 would probably help here.
  */
-@RunWith(Parameterized.class)
+@ParameterizedClass
+@MethodSource("data")
+@Isolated("Uses TimeZone.setDefault")
 public class TimestampTest extends BaseTest4 {
 
   public TimestampTest(BinaryMode binaryMode) {
@@ -50,29 +56,43 @@ public class TimestampTest extends BaseTest4 {
 
   private TimeZone currentTZ;
 
-  @Parameterized.Parameters(name = "binary = {0}")
   public static Iterable<Object[]> data() {
-    Collection<Object[]> ids = new ArrayList<Object[]>();
+    Collection<Object[]> ids = new ArrayList<>();
     for (BinaryMode binaryMode : BinaryMode.values()) {
       ids.add(new Object[]{binaryMode});
     }
     return ids;
   }
 
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.createTable(con, TSWTZ_TABLE, "ts timestamp with time zone");
+      TestUtil.createTable(con, TSWOTZ_TABLE, "ts timestamp without time zone");
+      TestUtil.createTable(con, DATE_TABLE, "ts date");
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.dropTable(con, TSWTZ_TABLE);
+      TestUtil.dropTable(con, TSWOTZ_TABLE);
+      TestUtil.dropTable(con, DATE_TABLE);
+    }
+  }
+
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    TestUtil.createTable(con, TSWTZ_TABLE, "ts timestamp with time zone");
-    TestUtil.createTable(con, TSWOTZ_TABLE, "ts timestamp without time zone");
-    TestUtil.createTable(con, DATE_TABLE, "ts date");
+    TestUtil.execute(con, "TRUNCATE " + TSWTZ_TABLE);
+    TestUtil.execute(con, "TRUNCATE " + TSWOTZ_TABLE);
+    TestUtil.execute(con, "TRUNCATE " + DATE_TABLE);
     currentTZ = TimeZone.getDefault();
   }
 
   @Override
   public void tearDown() throws SQLException {
-    TestUtil.dropTable(con, TSWTZ_TABLE);
-    TestUtil.dropTable(con, TSWOTZ_TABLE);
-    TestUtil.dropTable(con, DATE_TABLE);
     TimeZone.setDefault(currentTZ);
     super.tearDown();
   }
@@ -179,6 +199,7 @@ public class TimestampTest extends BaseTest4 {
    * value (don't use setTimestamp) then see that we get back the same value from getTimestamp
    */
   @Test
+  @SuppressWarnings("deprecation")
   public void testGetTimestampWTZ() throws SQLException {
     assumeTrue(TestUtil.haveIntegerDateTimes(con));
 
@@ -187,14 +208,10 @@ public class TimestampTest extends BaseTest4 {
 
     // Insert the three timestamp values in raw pg format
     for (int i = 0; i < 3; i++) {
-      assertEquals(1,
-          stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE, "'" + TS1WTZ_PGFORMAT + "'")));
-      assertEquals(1,
-          stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE, "'" + TS2WTZ_PGFORMAT + "'")));
-      assertEquals(1,
-          stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE, "'" + TS3WTZ_PGFORMAT + "'")));
-      assertEquals(1,
-          stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE, "'" + TS4WTZ_PGFORMAT + "'")));
+      assertEquals(1, stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE, "'" + TS1WTZ_PGFORMAT + "'")));
+      assertEquals(1, stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE, "'" + TS2WTZ_PGFORMAT + "'")));
+      assertEquals(1, stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE, "'" + TS3WTZ_PGFORMAT + "'")));
+      assertEquals(1, stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE, "'" + TS4WTZ_PGFORMAT + "'")));
     }
     assertEquals(1, stmt.executeUpdate(TestUtil.insertSQL(TSWTZ_TABLE,
         "'" + tsu.toString(null, new Timestamp(tmpDate1.getTime())) + "'")));
@@ -299,6 +316,7 @@ public class TimestampTest extends BaseTest4 {
    * getTimestamp
    */
   @Test
+  @SuppressWarnings("deprecation")
   public void testGetTimestampWOTZ() throws SQLException {
     assumeTrue(TestUtil.haveIntegerDateTimes(con));
     //Refer to #896
@@ -361,8 +379,8 @@ public class TimestampTest extends BaseTest4 {
     // With java.sql.Date, java.sql.Time
     for (java.util.Date date : TEST_DATE_TIMES) {
       pstmt.setObject(1, date, Types.TIMESTAMP);
-      assertEquals("insert into TSWOTZ_TABLE via setObject(1, " + date
-          + ", Types.TIMESTAMP) -> expecting one row inserted", 1, pstmt.executeUpdate());
+      assertEquals(1, pstmt.executeUpdate(), "insert into TSWOTZ_TABLE via setObject(1, " + date
+          + ", Types.TIMESTAMP) -> expecting one row inserted");
     }
 
     // Fall through helper
@@ -563,13 +581,35 @@ public class TimestampTest extends BaseTest4 {
       assertTrue(rs.next());
       t = rs.getTimestamp(1);
       assertNotNull(t);
-      assertEquals("rs.getTimestamp(1).getTime()", expected.getTime(), t.getTime());
+      assertEquals(expected.getTime(), t.getTime(), "rs.getTimestamp(1).getTime()");
     }
 
     assertTrue(!rs.next()); // end of table. Fail if more entries exist.
 
     rs.close();
     stmt.close();
+  }
+
+  @Test
+  public void testJavaTimestampFromSQLTime() throws SQLException {
+    Statement st = con.createStatement();
+    ResultSet rs = st.executeQuery("SELECT '00:00:05.123456'::time as t, '1970-01-01 00:00:05.123456'::timestamp as ts, "
+        + "'00:00:05.123456 +0300'::time with time zone as tz, '1970-01-01 00:00:05.123456 +0300'::timestamp with time zone as tstz ");
+    rs.next();
+    Timestamp t = rs.getTimestamp("t");
+    Timestamp ts = rs.getTimestamp("ts");
+    Timestamp tz = rs.getTimestamp("tz");
+
+    Timestamp tstz = rs.getTimestamp("tstz");
+
+    Integer desiredNanos = 123456000;
+    Integer tNanos = t.getNanos();
+    Integer tzNanos = tz.getNanos();
+
+    assertEquals(desiredNanos, tNanos, "Time should be microsecond-accurate");
+    assertEquals(desiredNanos, tzNanos, "Time with time zone should be microsecond-accurate");
+    assertEquals(ts, t, "Unix epoch timestamp and Time should match");
+    assertEquals(tstz, tz, "Unix epoch timestamp with time zone and time with time zone should match");
   }
 
   private static Timestamp getTimestamp(int y, int m, int d, int h, int mn, int se, int f,
@@ -601,7 +641,7 @@ public class TimestampTest extends BaseTest4 {
   }
 
   private static final Timestamp TS1WTZ =
-      getTimestamp(1950, 2, 7, 15, 0, 0, 100000000, "PST");
+      getTimestamp(1950, 2, 7, 15, 0, 0, 100000000, "GMT-08:00");
   private static final String TS1WTZ_PGFORMAT = "1950-02-07 15:00:00.1-08";
 
   private static final Timestamp TS2WTZ =

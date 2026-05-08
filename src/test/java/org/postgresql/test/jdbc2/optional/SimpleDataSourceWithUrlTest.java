@@ -5,8 +5,8 @@
 
 package org.postgresql.test.jdbc2.optional;
 
-import org.postgresql.jdbc2.optional.SimpleDataSource;
 import org.postgresql.test.TestUtil;
+import org.postgresql.util.PSQLException;
 
 /**
  * Performs the basic tests defined in the superclass. Just adds the configuration logic.
@@ -18,12 +18,12 @@ public class SimpleDataSourceWithUrlTest extends BaseDataSourceTest {
    * Creates and configures a new SimpleDataSource.
    */
   @Override
-  protected void initializeDataSource() {
+  @SuppressWarnings("deprecation")
+  protected void initializeDataSource() throws PSQLException {
     if (bds == null) {
-      bds = new SimpleDataSource();
+      bds = new org.postgresql.jdbc2.optional.SimpleDataSource();
       bds.setUrl("jdbc:postgresql://" + TestUtil.getServer() + ":" + TestUtil.getPort() + "/"
-          + TestUtil.getDatabase() + "?prepareThreshold=" + TestUtil.getPrepareThreshold()
-          + "&logLevel=" + TestUtil.getLogLevel());
+          + TestUtil.getDatabase() + "?prepareThreshold=" + TestUtil.getPrepareThreshold());
       bds.setUser(TestUtil.getUser());
       bds.setPassword(TestUtil.getPassword());
       bds.setProtocolVersion(TestUtil.getProtocolVersion());

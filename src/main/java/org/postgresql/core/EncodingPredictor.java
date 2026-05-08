@@ -10,7 +10,7 @@ package org.postgresql.core;
 import java.io.IOException;
 
 /**
- * <p>Predicts encoding for error messages based on some heuristics.</p>
+ * Predicts encoding for error messages based on some heuristics.
  *
  * <ol>
  * <li>For certain languages, it is known how "FATAL" is translated</li>

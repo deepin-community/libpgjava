@@ -1,3 +1,215 @@
+libpgjava (42.7.11-1) unstable; urgency=medium
+
+  * New upstream version 42.7.11.
+  * Limit SCRAM PBKDF2 iterations accepted from the server.
+    pgjdbc was vulnerable to a client-side denial of service in SCRAM-SHA-256
+    authentication, where a malicious or compromised PostgreSQL server could
+    specify an extremely large PBKDF2 iteration count, causing the client to
+    consume unbounded CPU and potentially exhaust connection pools. The fix
+    introduces a new scramMaxIterations connection property (defaulting to
+    100,000) to cap iteration counts before computation begins.
+    (CVE-2026-42198)
+
+ -- Christoph Berg <myon@debian.org>  Wed, 29 Apr 2026 11:08:43 +0200
+
+libpgjava (42.7.10-1) unstable; urgency=medium
+
+  * New upstream version 42.7.10.
+
+ -- Christoph Berg <myon@debian.org>  Wed, 11 Feb 2026 20:38:12 +0100
+
+libpgjava (42.7.9-1) unstable; urgency=medium
+
+  * New upstream version 42.7.9.
+
+ -- Christoph Berg <myon@debian.org>  Sat, 17 Jan 2026 14:52:24 +0100
+
+libpgjava (42.7.8-2) unstable; urgency=medium
+
+  * Team upload.
+  * Ignore org.junit:junit-bom to avoid propagating it as a transitive
+    dependency to reverse build-deps through the pom. (Closes: #1121881)
+  * Bump Standards-Version to 4.7.2
+  * Update d/copyright Format URL
+  * Update debian/watch to version 5
+  * Remove Rules-Requires-Root from debian/control
+
+ -- tony mancill <tmancill@debian.org>  Wed, 03 Dec 2025 21:19:04 -0800
+
+libpgjava (42.7.8-1) unstable; urgency=medium
+
+  * New upstream version 42.7.8.
+
+ -- Christoph Berg <myon@debian.org>  Tue, 23 Sep 2025 20:18:01 +0000
+
+libpgjava (42.7.7-2) unstable; urgency=medium
+
+  * Rebuild against libscram-java 3.2-1. (CVE-2025-59432)
+
+ -- Christoph Berg <myon@debian.org>  Tue, 23 Sep 2025 18:14:27 +0000
+
+libpgjava (42.7.7-1) unstable; urgency=medium
+
+  * New upstream version 42.7.7.
+    Fixes CVE-2025-49146: When the PostgreSQL JDBC driver is configured with
+    channel binding set to required (default value is prefer), the driver
+    would incorrectly allow connections to proceed with authentication methods
+    that do not support channel binding (such as password, MD5, GSS, or SSPI
+    authentication). This could allow a man-in-the-middle attacker to
+    intercept connections that users believed were protected by channel
+    binding requirements.
+
+ -- Christoph Berg <myon@debian.org>  Fri, 13 Jun 2025 15:26:53 +0200
+
+libpgjava (42.7.6-1) experimental; urgency=medium
+
+  * New upstream version 42.7.6.
+
+ -- Christoph Berg <myon@debian.org>  Mon, 02 Jun 2025 17:05:52 +0200
+
+libpgjava (42.7.5-2) unstable; urgency=medium
+
+  * Fix org.postgresql.util.PSQLException: Unable to convert bytea parameter
+    at position 1 to literal. (Closes: #1098830)
+
+ -- Christoph Berg <myon@debian.org>  Thu, 17 Apr 2025 11:14:38 +0000
+
+libpgjava (42.7.5-1) unstable; urgency=medium
+
+  * Team upload.
+  * New upstream release
+    - Refreshed the patches
+  * Removed the unused dependency on libxerces2-java
+
+ -- Emmanuel Bourg <ebourg@apache.org>  Mon, 10 Feb 2025 10:15:21 +0100
+
+libpgjava (42.7.3-2) unstable; urgency=medium
+
+  * Team upload.
+  * Removed the -java-doc package (Closes: #1088125)
+  * Standards-Version updated to 4.7.0
+
+ -- Emmanuel Bourg <ebourg@apache.org>  Mon, 09 Dec 2024 14:05:50 +0100
+
+libpgjava (42.7.3-1) unstable; urgency=medium
+
+  * New upstream version 42.7.3.
+
+ -- Christoph Berg <myon@debian.org>  Fri, 15 Mar 2024 15:13:39 +0100
+
+libpgjava (42.7.2-1) unstable; urgency=medium
+
+  * New upstream version 42.7.2. (CVE-2024-1597)
+
+ -- Christoph Berg <myon@debian.org>  Thu, 22 Feb 2024 11:46:47 +0100
+
+libpgjava (42.7.1-1) unstable; urgency=medium
+
+  * New upstream version 42.7.1.
+
+ -- Christoph Berg <myon@debian.org>  Thu, 07 Dec 2023 23:27:15 +0100
+
+libpgjava (42.7.0-1) unstable; urgency=medium
+
+  * New upstream version 42.7.0.
+
+ -- Christoph Berg <myon@debian.org>  Tue, 21 Nov 2023 10:31:51 +0100
+
+libpgjava (42.6.0-2) unstable; urgency=medium
+
+  * Remove ancient Replaces/Conflicts. Thanks Helmut Grohne for the report.
+
+ -- Christoph Berg <myon@debian.org>  Wed, 18 Oct 2023 14:05:07 +0200
+
+libpgjava (42.6.0-1) experimental; urgency=medium
+
+  * New upstream version 42.6.0.
+
+ -- Christoph Berg <myon@debian.org>  Mon, 27 Mar 2023 09:36:55 +0200
+
+libpgjava (42.5.4-1) unstable; urgency=medium
+
+  * New upstream version 42.5.4.
+
+ -- Christoph Berg <myon@debian.org>  Fri, 17 Feb 2023 18:19:35 +0100
+
+libpgjava (42.5.3-1) unstable; urgency=medium
+
+  * New upstream version 42.5.3.
+
+ -- Christoph Berg <myon@debian.org>  Thu, 09 Feb 2023 11:26:33 +0100
+
+libpgjava (42.5.1-1) unstable; urgency=medium
+
+  * New upstream version 42.5.1, fixes CVE-2022-41946.
+
+ -- Christoph Berg <myon@debian.org>  Thu, 24 Nov 2022 12:54:21 +0100
+
+libpgjava (42.5.0-1) unstable; urgency=medium
+
+  * New upstream version 42.5.0.
+
+ -- Christoph Berg <myon@debian.org>  Fri, 26 Aug 2022 12:06:57 +0200
+
+libpgjava (42.4.2-1) unstable; urgency=medium
+
+  * New upstream version 42.4.2.
+
+ -- Christoph Berg <myon@debian.org>  Mon, 22 Aug 2022 14:24:18 +0200
+
+libpgjava (42.4.1-1) unstable; urgency=medium
+
+  * New upstream version 42.4.1
+
+    Fixes SQL generated in PgResultSet.refresh() to escape column identifiers
+    so as to prevent SQL injection.
+    (Closes: #1016662, CVE-2022-31197, reported by Sho Kato)
+
+    Previously, the column names for both key and data columns in the table
+    were copied as-is into the generated SQL. This allowed a malicious table
+    with column names that include statement terminator to be parsed and
+    executed as multiple separate commands.
+
+ -- Christoph Berg <myon@debian.org>  Mon, 08 Aug 2022 14:53:28 +0200
+
+libpgjava (42.4.0-1) unstable; urgency=medium
+
+  * New upstream version 42.4.0.
+
+ -- Christoph Berg <myon@debian.org>  Tue, 14 Jun 2022 15:18:49 +0200
+
+libpgjava (42.3.6-1) unstable; urgency=medium
+
+  * New upstream version 42.3.6.
+
+ -- Christoph Berg <myon@debian.org>  Fri, 27 May 2022 14:56:40 +0200
+
+libpgjava (42.3.5-1) unstable; urgency=medium
+
+  * New upstream version 42.3.5.
+
+ -- Christoph Berg <myon@debian.org>  Fri, 06 May 2022 16:51:03 +0200
+
+libpgjava (42.3.4-1) unstable; urgency=medium
+
+  * New upstream version 42.3.4.
+
+ -- Christoph Berg <myon@debian.org>  Mon, 02 May 2022 15:56:41 +0200
+
+libpgjava (42.3.3-1) unstable; urgency=medium
+
+  * New upstream version 42.3.3.
+    https://github.com/pgjdbc/pgjdbc/security/advisories/GHSA-673j-qm5f-xpv8
+
+ -- Christoph Berg <myon@debian.org>  Thu, 17 Feb 2022 13:08:38 +0100
+
+libpgjava (42.3.2-1) unstable; urgency=medium
+
+  * New upstream version 42.3.2.
+    https://github.com/pgjdbc/pgjdbc/security/advisories/GHSA-v7wg-cpwc-24m4
+
+ -- Christoph Berg <myon@debian.org>  Fri, 04 Feb 2022 10:58:43 +0100
+
 libpgjava (42.3.1-1) unstable; urgency=medium
 
   * New upstream version 42.3.1.
@@ -292,7 +504,7 @@ libpgjava (8.0-312-1) unstable; urgency=low
 
   * New upstream release
     + Supports Postgresql 7.2 up to 8.0 releases
-    + Upstream supplies its own source packages for the jdbc driver 
+    + Upstream supplies its own source packages for the jdbc driver
       starting with release 8.0 - no longer extracted from postgresql
   * Changed library name to comply with java policy (closes: #275417)
     + Added conflicts, replaces with old binary
@@ -332,15 +544,15 @@ libpgjava (7.4.7-2) unstable; urgency=low
   * Added patch to fix jikes compile error in JDBC2 optional classes
     (02_jikes_jdbc2-optional_compilefix.patch)
   * Build JDBC2 with optional classes but without SSL support
-    Building with SSL support would prevent running the JDBC2 driver on 
-    jdk1.3 runtimes without SSL extensions or using the -Xverify:none flag  
+    Building with SSL support would prevent running the JDBC2 driver on
+    jdk1.3 runtimes without SSL extensions or using the -Xverify:none flag
   * Build.xml (03_BuildXml.patch):
     - Patched to allow explicit selection of JDBC specification
       with -Djdbc2=true or -Djdbc3=true arguments during build
     - Patched to allow explicit selection of SSL usage during
       compile time with -Dssl=true (JDBC2 build has to be built without SSL)
     - Patched to allow explicit selection of compile target version with
-      -Dtarget=1.3 for JDBC2 and -Dtarget=1.4 for JDBC3 
+      -Dtarget=1.3 for JDBC2 and -Dtarget=1.4 for JDBC3
 
  -- Wolfgang Baer <WBaer@gmx.de>  Tue, 19 Apr 2005 20:28:25 +0200
 
@@ -362,7 +574,7 @@ libpgjava (7.4.2-1) unstable; urgency=low
     (closes: #238961)
   * Updated debian/copyright
   * Use libant1.6-java instead of libant1.5-java for building
-  * 
+  *
 
  -- Stefan Gybas <sgybas@debian.org>  Mon, 19 Apr 2004 19:40:03 +0200
 

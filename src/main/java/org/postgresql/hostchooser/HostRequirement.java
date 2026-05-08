@@ -12,6 +12,7 @@ package org.postgresql.hostchooser;
  */
 public enum HostRequirement {
   any {
+    @Override
     public boolean allowConnectingTo(/* @Nullable */ HostStatus status) {
       return status != HostStatus.ConnectFail;
     }
@@ -22,21 +23,31 @@ public enum HostRequirement {
    */
   @Deprecated
   master {
+    @Override
     public boolean allowConnectingTo(/* @Nullable */ HostStatus status) {
       return primary.allowConnectingTo(status);
     }
   },
   primary {
+    @Override
     public boolean allowConnectingTo(/* @Nullable */ HostStatus status) {
       return status == HostStatus.Primary || status == HostStatus.ConnectOK;
     }
   },
   secondary {
+    @Override
     public boolean allowConnectingTo(/* @Nullable */ HostStatus status) {
       return status == HostStatus.Secondary || status == HostStatus.ConnectOK;
     }
   },
   preferSecondary {
+    @Override
+    public boolean allowConnectingTo(/* @Nullable */ HostStatus status) {
+      return status != HostStatus.ConnectFail;
+    }
+  },
+  preferPrimary {
+    @Override
     public boolean allowConnectingTo(/* @Nullable */ HostStatus status) {
       return status != HostStatus.ConnectFail;
     }
@@ -45,10 +56,10 @@ public enum HostRequirement {
   public abstract boolean allowConnectingTo(/* @Nullable */ HostStatus status);
 
   /**
-   * <p>The postgreSQL project has decided not to use the term slave to refer to alternate servers.
+   * The postgreSQL project has decided not to use the term slave to refer to alternate servers.
    * secondary or standby is preferred. We have arbitrarily chosen secondary.
    * As of Jan 2018 in order not to break existing code we are going to accept both slave or
-   * secondary for names of alternate servers.</p>
+   * secondary for names of alternate servers.
    *
    * <p>The current policy is to keep accepting this silently but not document slave, or slave preferSlave</p>
    *

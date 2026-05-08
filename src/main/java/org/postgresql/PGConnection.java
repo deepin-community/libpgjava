@@ -11,13 +11,20 @@ import org.postgresql.jdbc.AutoSave;
 import org.postgresql.jdbc.PreferQueryMode;
 import org.postgresql.largeobject.LargeObjectManager;
 import org.postgresql.replication.PGReplicationConnection;
+import org.postgresql.util.GT;
 import org.postgresql.util.PGobject;
+import org.postgresql.util.PSQLException;
+import org.postgresql.util.PSQLState;
+import org.postgresql.util.PasswordUtil;
 
 // import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.sql.Array;
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.Map;
 
 /**
@@ -46,7 +53,7 @@ public interface PGConnection {
 
   /**
    * This method returns any notifications that have been received since the last call to this
-   * method. Returns null if there have been no notifications.
+   * method. Returns an empty array if there have been no notifications.
    *
    * @return notifications that have been received
    * @throws SQLException if something wrong happens
@@ -56,10 +63,10 @@ public interface PGConnection {
 
   /**
    * This method returns any notifications that have been received since the last call to this
-   * method. Returns null if there have been no notifications. A timeout can be specified so the
-   * driver waits for notifications.
+   * method. Returns an empty array if there have been no notifications. A timeout can be specified
+   * so the driver waits for notifications.
    *
-   * @param timeoutMillis when 0, blocks forever. when &gt; 0, blocks up to the specified number of millies
+   * @param timeoutMillis when 0, blocks forever. when &gt; 0, blocks up to the specified number of millis
    *        or until at least one notification has been received. If more than one notification is
    *        about to be received, these will be returned in one batch.
    * @return notifications that have been received
@@ -89,15 +96,15 @@ public interface PGConnection {
   /**
    * This returns the Fastpath API for the current connection.
    *
+   * <p>
+   * Note: This API is somewhat obsolete, as one may achieve similar performance
+   * and greater functionality by setting up a prepared statement to define
+   * the function call. Then, executing the statement with binary transmission of parameters
+   * and results substitutes for a fast-path function call.
    * @return Fastpath API for the current connection
    * @throws SQLException if something wrong happens
    * @since 7.3
-   * @deprecated This API is somewhat obsolete, as one may achieve similar performance
-   *         and greater functionality by setting up a prepared statement to define
-   *         the function call. Then, executing the statement with binary transmission of parameters
-   *         and results substitutes for a fast-path function call.
    */
-  @Deprecated
   Fastpath getFastpathAPI() throws SQLException;
 
   /**
@@ -115,7 +122,7 @@ public interface PGConnection {
   void addDataType(String type, String className);
 
   /**
-   * <p>This allows client code to add a handler for one of org.postgresql's more unique data types.</p>
+   * This allows client code to add a handler for one of org.postgresql's more unique data types.
    *
    * <p><b>NOTE:</b> This is not part of JDBC, but an extension.</p>
    *
@@ -178,6 +185,24 @@ public interface PGConnection {
   int getDefaultFetchSize();
 
   /**
+   * Set the query timeout for statements created from this connection.
+   *
+   * @param seconds new query timeout
+   * @throws SQLException if specified negative <code>seconds</code> parameter
+   * @see Statement#setQueryTimeout(int)
+   */
+  void setQueryTimeout(int seconds) throws SQLException;
+
+  /**
+   * Get the query timeout for statements created from this connection.
+   *
+   * @return current state for query timeout
+   * @see PGProperty#QUERY_TIMEOUT
+   * @see Statement#getQueryTimeout()
+   */
+  int getQueryTimeout();
+
+  /**
    * Return the process ID (PID) of the backend server process handling this connection.
    *
    * @return PID of backend server process.
@@ -213,10 +238,11 @@ public interface PGConnection {
   String escapeLiteral(String literal) throws SQLException;
 
   /**
-   * <p>Returns the query mode for this connection.</p>
+   * Returns the query mode for this connection.
    *
    * <p>When running in simple query mode, certain features are not available: callable statements,
    * partial result set fetch, bytea type, etc.</p>
+   *
    * <p>The list of supported features is subject to change.</p>
    *
    * @return the preferred query mode
@@ -245,7 +271,49 @@ public interface PGConnection {
   PGReplicationConnection getReplicationAPI();
 
   /**
-   * <p>Returns the current values of all parameters reported by the server.</p>
+   * Change a user's password to the specified new password.
+   *
+   * <p>
+   * If the specific encryption type is not specified, this method defaults to querying the database server for the server's default password_encryption.
+   * This method does not send the new password in plain text to the server.
+   * Instead, it encrypts the password locally and sends the encoded hash so that the plain text password is never sent on the wire.
+   * </p>
+   *
+   * <p>
+   * Acceptable values for encryptionType are null, "md5", or "scram-sha-256".
+   * Users should avoid "md5" unless they are explicitly targeting an older server that does not support the more secure SCRAM.
+   * </p>
+   *
+   * @param user The username of the database user
+   * @param newPassword The new password for the database user. The implementation will zero
+   *                    out the array after use
+   * @param encryptionType The type of password encryption to use or null if the database server default should be used.
+   * @throws SQLException If the password could not be altered
+   */
+  default void alterUserPassword(String user, char[] newPassword, /* @Nullable */ String encryptionType) throws SQLException {
+    try (Statement stmt = ((Connection) this).createStatement()) {
+      if (encryptionType == null) {
+        try (ResultSet rs = stmt.executeQuery("SHOW password_encryption")) {
+          if (!rs.next()) {
+            throw new PSQLException(GT.tr("Expected a row when reading password_encryption but none was found"),
+                PSQLState.NO_DATA);
+          }
+          encryptionType = rs.getString(1);
+          if (encryptionType == null) {
+            throw new PSQLException(GT.tr("SHOW password_encryption returned null value"),
+                PSQLState.NO_DATA);
+          }
+        }
+      }
+      String sql = PasswordUtil.genAlterUserPasswordSQL(user, newPassword, encryptionType);
+      stmt.execute(sql);
+    } finally {
+      Arrays.fill(newPassword, (char) 0);
+    }
+  }
+
+  /**
+   * Returns the current values of all parameters reported by the server.
    *
    * <p>PostgreSQL reports values for a subset of parameters (GUCs) to the client
    * at connect-time, then sends update messages whenever the values change
@@ -253,7 +321,7 @@ public interface PGConnection {
    * applications via <code>getParameterStatuses()</code>.</p>
    *
    * <p>PgJDBC exposes individual accessors for some of these parameters as
-   * listed below. They are more backwarrds-compatible and should be preferred
+   * listed below. They are more backwards-compatible and should be preferred
    * where possible.</p>
    *
    * <p>Not all parameters are reported, only those marked
@@ -270,7 +338,7 @@ public interface PGConnection {
    *
    * <p>
    *  As of PostgreSQL 11 the reportable parameter list, and related PgJDBC
-   *  interfaces or accesors, are:
+   *  interfaces or assessors, are:
    * </p>
    *
    * <ul>
@@ -304,7 +372,7 @@ public interface PGConnection {
    * @return unmodifiable map of case-insensitive parameter names to parameter values
    * @since 42.2.6
    */
-  Map<String,String> getParameterStatuses();
+  Map<String, String> getParameterStatuses();
 
   /**
    * Shorthand for getParameterStatuses().get(...) .

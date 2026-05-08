@@ -5,59 +5,76 @@
 
 package org.postgresql.test.jdbc4;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import org.postgresql.core.ServerVersion;
 import org.postgresql.test.TestUtil;
 import org.postgresql.test.jdbc2.BaseTest4;
+import org.postgresql.util.PGobject;
 
-import org.junit.Assert;
-import org.junit.Assume;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.sql.Array;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 
-@RunWith(Parameterized.class)
+@ParameterizedClass
+@MethodSource("data")
 public class JsonbTest extends BaseTest4 {
   public JsonbTest(BinaryMode binaryMode) {
     setBinaryMode(binaryMode);
   }
 
-  @Parameterized.Parameters(name = "binary = {0}")
   public static Iterable<Object[]> data() {
-    Collection<Object[]> ids = new ArrayList<Object[]>();
+    Collection<Object[]> ids = new ArrayList<>();
     for (BinaryMode binaryMode : BinaryMode.values()) {
       ids.add(new Object[]{binaryMode});
     }
     return ids;
   }
 
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      assumeTrue(
+          TestUtil.haveMinimumServerVersion(con, ServerVersion.v9_4),
+          "jsonb requires PostgreSQL 9.4+");
+      TestUtil.createTable(con, "jsonbtest", "detail jsonb");
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.dropTable(con, "jsonbtest");
+    }
+  }
+
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    Assume.assumeTrue("jsonb requires PostgreSQL 9.4+", TestUtil.haveMinimumServerVersion(con, ServerVersion.v9_4));
-    TestUtil.createTable(con, "jsonbtest", "detail jsonb");
+    assumeTrue(
+        TestUtil.haveMinimumServerVersion(con, ServerVersion.v9_4),
+        "jsonb requires PostgreSQL 9.4+");
+    TestUtil.execute(con, "TRUNCATE jsonbtest");
     Statement stmt = con.createStatement();
     stmt.executeUpdate("INSERT INTO jsonbtest (detail) VALUES ('{\"a\": 1}')");
     stmt.executeUpdate("INSERT INTO jsonbtest (detail) VALUES ('{\"b\": 1}')");
     stmt.executeUpdate("INSERT INTO jsonbtest (detail) VALUES ('{\"c\": 1}')");
     stmt.close();
-  }
-
-  @Override
-  public void tearDown() throws SQLException {
-    TestUtil.dropTable(con, "jsonbtest");
-    super.tearDown();
   }
 
   @Test
@@ -69,6 +86,28 @@ public class JsonbTest extends BaseTest4 {
     assertEquals(2, rs.getInt(1));
     rs.close();
     stmt.close();
+  }
+
+  @Test
+  public void testJsonbResultType() throws SQLException {
+    try (ResultSet rs = con.createStatement().executeQuery("SELECT '[1,2,3]'::jsonb")) {
+      ResultSetMetaData rsmd = rs.getMetaData();
+      assertEquals("jsonb", rsmd.getColumnTypeName(1));
+      assertEquals(PGobject.class.getName(), rsmd.getColumnClassName(1));
+      assertTrue(rs.next());
+      assertEquals("[1, 2, 3]", rs.getString(1));
+    }
+  }
+
+  @Test
+  public void testJsonResultType() throws SQLException {
+    try (ResultSet rs = con.createStatement().executeQuery("SELECT '[1,2,3]'::json")) {
+      ResultSetMetaData rsmd = rs.getMetaData();
+      assertEquals("json", rsmd.getColumnTypeName(1));
+      assertEquals(PGobject.class.getName(), rsmd.getColumnClassName(1));
+      assertTrue(rs.next());
+      assertEquals("[1,2,3]", rs.getString(1));
+    }
   }
 
   @Test
@@ -97,17 +136,15 @@ public class JsonbTest extends BaseTest4 {
     assertTrue(rs.next());
     Array array = rs.getArray(1);
     Object[] objectArray = (Object[]) array.getArray();
-    Assert.assertEquals(
-        "'{[2],[3]}'::" + type + "[] should come up as Java array with two entries",
+    assertEquals(
         "[[2], [3]]",
-        Arrays.deepToString(objectArray)
-    );
+        Arrays.deepToString(objectArray),
+        () -> "'{[2],[3]}'::" + type + "[] should come up as Java array with two entries");
 
-    Assert.assertEquals(
-        type + " array entries should come up as strings",
+    assertEquals(
         arrayElement.getName() + ", " + arrayElement.getName(),
-        objectArray[0].getClass().getName() + ", " + objectArray[1].getClass().getName()
-    );
+        objectArray[0].getClass().getName() + ", " + objectArray[1].getClass().getName(),
+        () -> type + " array entries should come up as strings");
     rs.close();
     stmt.close();
   }

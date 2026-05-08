@@ -10,6 +10,8 @@ import org.postgresql.jdbc.FieldMetadata;
 // import org.checkerframework.checker.nullness.qual.Nullable;
 // import org.checkerframework.dataflow.qual.Pure;
 
+import java.util.Locale;
+
 public class Field {
   // The V3 protocol defines two constants for the format of data
   public static final int TEXT_FORMAT = 0;
@@ -82,6 +84,7 @@ public class Field {
   }
 
   /**
+   * Returns the oid of this Field's data type.
    * @return the oid of this Field's data type
    */
   /* @Pure */
@@ -90,6 +93,7 @@ public class Field {
   }
 
   /**
+   * Returns the mod of this Field's data type
    * @return the mod of this Field's data type
    */
   public int getMod() {
@@ -97,6 +101,7 @@ public class Field {
   }
 
   /**
+   * Returns the column label of this Field's data type.
    * @return the column label of this Field's data type
    */
   public String getColumnLabel() {
@@ -104,6 +109,7 @@ public class Field {
   }
 
   /**
+   * Returns the length of this Field's data type.
    * @return the length of this Field's data type
    */
   public int getLength() {
@@ -111,6 +117,7 @@ public class Field {
   }
 
   /**
+   * Returns the format of this Field's data (text=0, binary=1).
    * @return the format of this Field's data (text=0, binary=1)
    */
   public int getFormat() {
@@ -118,6 +125,7 @@ public class Field {
   }
 
   /**
+   * Sets the format of this Field's data (text=0, binary=1).
    * @param format the format of this Field's data (text=0, binary=1)
    */
   public void setFormat(int format) {
@@ -125,6 +133,7 @@ public class Field {
   }
 
   /**
+   * Returns the columns' table oid, zero if no oid available.
    * @return the columns' table oid, zero if no oid available
    */
   public int getTableOid() {
@@ -143,6 +152,7 @@ public class Field {
     this.metadata = metadata;
   }
 
+  @Override
   public String toString() {
     return "Field(" + (columnLabel != null ? columnLabel : "")
         + "," + Oid.toString(oid)
@@ -167,11 +177,13 @@ public class Field {
     return pgType;
   }
 
+  @SuppressWarnings("ReferenceEquality")
   public boolean isTypeInitialized() {
+    //noinspection StringEquality
     return pgType != NOT_YET_LOADED;
   }
 
   public void upperCaseLabel() {
-    columnLabel = columnLabel.toUpperCase();
+    columnLabel = columnLabel.toUpperCase(Locale.ROOT);
   }
 }

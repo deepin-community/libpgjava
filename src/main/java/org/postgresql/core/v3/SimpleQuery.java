@@ -44,6 +44,7 @@ class SimpleQuery implements Query {
     this.sanitiserDisabled = sanitiserDisabled;
   }
 
+  @Override
   public ParameterList createParameterList() {
     if (nativeQuery.bindPositions.length == 0) {
       return NO_PARAMETERS;
@@ -52,25 +53,34 @@ class SimpleQuery implements Query {
     return new SimpleParameterList(getBindCount(), transferModeRegistry);
   }
 
+  @Override
   public String toString(/* @Nullable */ ParameterList parameters) {
-    return nativeQuery.toString(parameters);
+    return toString(parameters, DefaultSqlSerializationContext.STDSTR_IDEMPOTENT);
   }
 
+  @Override
+  public String toString(/* @Nullable */ ParameterList parameters, SqlSerializationContext context) {
+    return nativeQuery.toString(parameters, context);
+  }
+
+  @Override
   public String toString() {
     return toString(null);
   }
 
+  @Override
   public void close() {
     unprepare();
   }
 
+  @Override
   public SimpleQuery /* @Nullable */ [] getSubqueries() {
     return null;
   }
 
   /**
-   * <p>Return maximum size in bytes that each result row from this query may return. Mainly used for
-   * batches that return results.</p>
+   * Return maximum size in bytes that each result row from this query may return. Mainly used for
+   * batches that return results.
    *
    * <p>Results are cached until/unless the query is re-described.</p>
    *
@@ -109,6 +119,7 @@ class SimpleQuery implements Query {
   // Implementation guts
   //
 
+  @Override
   public String getNativeSql() {
     return nativeQuery.nativeSql;
   }
@@ -163,7 +174,7 @@ class SimpleQuery implements Query {
         preparedTypes.length);
     // Check for compatible types.
     BitSet unspecified = this.unspecifiedParams;
-    for (int i = 0; i < paramTypes.length; ++i) {
+    for (int i = 0; i < paramTypes.length; i++) {
       int paramType = paramTypes[i];
       // Either paramType should match prepared type
       // Or paramType==UNSPECIFIED and the prepare type was UNSPECIFIED
@@ -273,6 +284,7 @@ class SimpleQuery implements Query {
 
   // Have we sent a Describe Statement message for this query yet?
   // Note that we might not have need to, so this may always be false.
+  @Override
   public boolean isStatementDescribed() {
     return statementDescribed;
   }
@@ -282,23 +294,26 @@ class SimpleQuery implements Query {
     this.cachedMaxResultRowSize = null;
   }
 
+  @Override
   public boolean isEmpty() {
     return getNativeSql().isEmpty();
   }
 
   void setCleanupRef(PhantomReference<?> cleanupRef) {
-    if (this.cleanupRef != null) {
-      this.cleanupRef.clear();
-      this.cleanupRef.enqueue();
+    PhantomReference<?> oldCleanupRef = this.cleanupRef;
+    if (oldCleanupRef != null) {
+      oldCleanupRef.clear();
+      oldCleanupRef.enqueue();
     }
     this.cleanupRef = cleanupRef;
   }
 
   void unprepare() {
+    PhantomReference<?> cleanupRef = this.cleanupRef;
     if (cleanupRef != null) {
       cleanupRef.clear();
       cleanupRef.enqueue();
-      cleanupRef = null;
+      this.cleanupRef = null;
     }
     if (this.unspecifiedParams != null) {
       this.unspecifiedParams.clear();
@@ -313,6 +328,7 @@ class SimpleQuery implements Query {
     cachedMaxResultRowSize = null;
   }
 
+  @Override
   public int getBatchSize() {
     return 1;
   }

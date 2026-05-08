@@ -15,6 +15,7 @@ import java.util.Map;
 /**
  * Caches values in simple least-recently-accessed order.
  */
+@SuppressWarnings("ExtendsObject")
 public class LruCache<Key extends Object, Value extends CanEstimateSize>
     implements Gettable<Key, Value> {
   /**
@@ -103,8 +104,12 @@ public class LruCache<Key extends Object, Value extends CanEstimateSize>
    * @param key cache key
    * @return entry from cache or null if cache does not contain given key.
    */
-  public synchronized /* @Nullable */ Value get(Key key) {
-    return cache.get(key);
+  @Override
+  public /* @Nullable */ Value get(Key key) {
+    Map<Key, Value> cache = this.cache;
+    synchronized (cache) {
+      return cache.get(key);
+    }
   }
 
   /**
@@ -114,16 +119,19 @@ public class LruCache<Key extends Object, Value extends CanEstimateSize>
    * @return entry from cache or newly created entry if cache does not contain given key.
    * @throws SQLException if entry creation fails
    */
-  public synchronized Value borrow(Key key) throws SQLException {
-    Value value = cache.remove(key);
-    if (value == null) {
-      if (createAction == null) {
-        throw new UnsupportedOperationException("createAction == null, so can't create object");
+  public Value borrow(Key key) throws SQLException {
+    Map<Key, Value> cache = this.cache;
+    synchronized (cache) {
+      Value value = cache.remove(key);
+      if (value == null) {
+        if (createAction == null) {
+          throw new UnsupportedOperationException("createAction == null, so can't create object");
+        }
+        return createAction.create(key);
       }
-      return createAction.create(key);
+      currentSize -= value.getSize();
+      return value;
     }
-    currentSize -= value.getSize();
-    return value;
   }
 
   /**
@@ -132,23 +140,26 @@ public class LruCache<Key extends Object, Value extends CanEstimateSize>
    * @param key key
    * @param value value
    */
-  public synchronized void put(Key key, Value value) {
-    long valueSize = value.getSize();
-    if (maxSizeBytes == 0 || maxSizeEntries == 0 || valueSize * 2 > maxSizeBytes) {
-      // Just destroy the value if cache is disabled or if entry would consume more than a half of
-      // the cache
-      evictValue(value);
-      return;
-    }
-    currentSize += valueSize;
-    /* @Nullable */ Value prev = cache.put(key, value);
-    if (prev == null) {
-      return;
-    }
-    // This should be a rare case
-    currentSize -= prev.getSize();
-    if (prev != value) {
-      evictValue(prev);
+  public void put(Key key, Value value) {
+    Map<Key, Value> cache = this.cache;
+    synchronized (cache) {
+      long valueSize = value.getSize();
+      if (maxSizeBytes == 0 || maxSizeEntries == 0 || valueSize * 2 > maxSizeBytes) {
+        // Just destroy the value if cache is disabled or if entry would consume more than a half of
+        // the cache
+        evictValue(value);
+        return;
+      }
+      currentSize += valueSize;
+      /* @Nullable */ Value prev = cache.put(key, value);
+      if (prev == null) {
+        return;
+      }
+      // This should be a rare case
+      currentSize -= prev.getSize();
+      if (prev != value) {
+        evictValue(prev);
+      }
     }
   }
 
@@ -157,9 +168,12 @@ public class LruCache<Key extends Object, Value extends CanEstimateSize>
    *
    * @param m The map containing entries to put into the cache
    */
-  public synchronized void putAll(Map<Key, Value> m) {
-    for (Map.Entry<Key, Value> entry : m.entrySet()) {
-      this.put(entry.getKey(), entry.getValue());
+  public void putAll(Map<Key, Value> m) {
+    Map<Key, Value> cache = this.cache;
+    synchronized (cache) {
+      for (Map.Entry<Key, Value> entry : m.entrySet()) {
+        this.put(entry.getKey(), entry.getValue());
+      }
     }
   }
 }

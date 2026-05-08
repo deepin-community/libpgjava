@@ -29,7 +29,7 @@ public class DefaultPGXmlFactoryFactory implements PGXmlFactoryFactory {
   private DefaultPGXmlFactoryFactory() {
   }
 
-  private DocumentBuilderFactory getDocumentBuilderFactory() {
+  private static DocumentBuilderFactory getDocumentBuilderFactory() {
     DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
     setFactoryProperties(factory);
     factory.setXIncludeAware(false);
@@ -69,8 +69,7 @@ public class DefaultPGXmlFactoryFactory implements PGXmlFactoryFactory {
 
   @Override
   public XMLOutputFactory newXMLOutputFactory() {
-    XMLOutputFactory factory = XMLOutputFactory.newInstance();
-    return factory;
+    return XMLOutputFactory.newInstance();
   }
 
   @Override
@@ -95,8 +94,8 @@ public class DefaultPGXmlFactoryFactory implements PGXmlFactoryFactory {
       } else {
         throw new Error("Invalid factory class: " + factory.getClass());
       }
-      return;
     } catch (Exception ignore) {
+      // ignore
     }
   }
 
@@ -110,6 +109,7 @@ public class DefaultPGXmlFactoryFactory implements PGXmlFactoryFactory {
         throw new Error("Invalid factory class: " + factory.getClass());
       }
     } catch (Exception ignore) {
+      // ignore
     }
   }
 
@@ -135,6 +135,7 @@ public class DefaultPGXmlFactoryFactory implements PGXmlFactoryFactory {
         throw new Error("Invalid factory class: " + factory.getClass());
       }
     } catch (Exception ignore) {
+      // ignore
     }
   }
 }

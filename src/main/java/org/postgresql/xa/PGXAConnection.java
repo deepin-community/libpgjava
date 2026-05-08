@@ -25,7 +25,8 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.LinkedList;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -35,7 +36,7 @@ import javax.transaction.xa.XAResource;
 import javax.transaction.xa.Xid;
 
 /**
- * <p>The PostgreSQL implementation of {@link XAResource}.</p>
+ * The PostgreSQL implementation of {@link XAResource}.
  *
  * <p>This implementation doesn't support transaction interleaving (see JTA specification, section
  * 3.4.4) and suspend/resume.</p>
@@ -124,10 +125,10 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
     public /* @Nullable */ Object invoke(Object proxy, Method method, /* @Nullable */ Object[] args) throws Throwable {
       if (state != State.IDLE) {
         String methodName = method.getName();
-        if (methodName.equals("commit")
-            || methodName.equals("rollback")
-            || methodName.equals("setSavePoint")
-            || (methodName.equals("setAutoCommit") && castNonNull((Boolean) args[0]))) {
+        if ("commit".equals(methodName)
+            || "rollback".equals(methodName)
+            || "setSavePoint".equals(methodName)
+            || ("setAutoCommit".equals(methodName) && castNonNull((Boolean) args[0]))) {
           throw new PSQLException(
               GT.tr(
                   "Transaction control methods setAutoCommit(true), commit, rollback and setSavePoint not allowed while an XA transaction is active."),
@@ -139,7 +140,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
          * If the argument to equals-method is also a wrapper, present the original unwrapped
          * connection to the underlying equals method.
          */
-        if (method.getName().equals("equals") && args.length == 1) {
+        if ("equals".equals(method.getName()) && args.length == 1) {
           Object arg = args[0];
           if (arg != null && Proxy.isProxyClass(arg.getClass())) {
             InvocationHandler h = Proxy.getInvocationHandler(arg);
@@ -158,7 +159,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
   }
 
   /**
-   * <p>Preconditions:</p>
+   * Preconditions:
    * <ol>
    *     <li>Flags must be one of TMNOFLAGS, TMRESUME or TMJOIN</li>
    *     <li>xid != null</li>
@@ -200,7 +201,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
           XAException.XAER_PROTO);
     }
 
-    // We can't check precondition 4 easily, so we don't. Duplicate xid will be catched in prepare
+    // We can't check precondition 4 easily, so we don't. Duplicate xid will be caught in prepare
     // phase.
 
     // Check implementation deficiency preconditions
@@ -247,7 +248,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
   }
 
   /**
-   * <p>Preconditions:</p>
+   * Preconditions:
    * <ol>
    *     <li>Flags is one of TMSUCCESS, TMFAIL, TMSUSPEND</li>
    *     <li>xid != null</li>
@@ -299,7 +300,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
   }
 
   /**
-   * <p>Prepares transaction. Preconditions:</p>
+   * Prepares transaction. Preconditions:
    * <ol>
    *     <li>xid != null</li>
    *     <li>xid is in ended state</li>
@@ -352,22 +353,22 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
     try {
       String s = RecoveredXid.xidToString(xid);
 
-      Statement stmt = conn.createStatement();
-      try {
+      try (Statement stmt = conn.createStatement()) {
         stmt.executeUpdate("PREPARE TRANSACTION '" + s + "'");
-      } finally {
-        stmt.close();
       }
       conn.setAutoCommit(localAutoCommitMode);
-
-      return XA_OK;
+      if (conn.isReadOnly()) {
+        return XA_RDONLY;
+      } else {
+        return XA_OK;
+      }
     } catch (SQLException ex) {
       throw new PGXAException(GT.tr("Error preparing transaction. prepare xid={0}", xid), ex, mapSQLStateToXAErrorCode(ex));
     }
   }
 
   /**
-   * <p>Recovers transaction. Preconditions:</p>
+   * Recovers transaction. Preconditions:
    * <ol>
    *     <li>flag must be one of TMSTARTRSCAN, TMENDRSCAN, TMNOFLAGS or TMSTARTTRSCAN | TMENDRSCAN</li>
    *     <li>If flag isn't TMSTARTRSCAN or TMSTARTRSCAN | TMENDRSCAN, a recovery scan must be in progress</li>
@@ -402,9 +403,12 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
           // except if the transaction is in abort-only state and the
           // backed refuses to process new queries. Hopefully not a problem
           // in practise.
+          // PostgreSQL requires the user to own the transaction in order to successfully execute
+          // commit prepared or rollback prepared
+          // See https://github.com/postgres/postgres/blob/15afb7d61c142a9254a6612c6774aff4f358fb69/src/backend/access/transam/twophase.c#L583C32-L599
           ResultSet rs = stmt.executeQuery(
-              "SELECT gid FROM pg_prepared_xacts where database = current_database()");
-          LinkedList<Xid> l = new LinkedList<Xid>();
+              "SELECT gid FROM pg_prepared_xacts where database = current_database() and pg_has_role(current_user, owner, 'member')");
+          List<Xid> l = new ArrayList<>();
           while (rs.next()) {
             Xid recoveredXid = RecoveredXid.stringToXid(castNonNull(rs.getString(1)));
             if (recoveredXid != null) {
@@ -424,7 +428,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
   }
 
   /**
-   * <p>Preconditions:</p>
+   * Preconditions:
    * <ol>
    *     <li>xid is known to the RM or it's in prepared state</li>
    * </ol>
@@ -482,7 +486,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
         }
         errorCode = XAException.XAER_RMFAIL;
       }
-      throw new PGXAException(GT.tr("Error rolling back prepared transaction. rollback xid={0}, preparedXid={1}, currentXid={2}", xid, preparedXid), ex, errorCode);
+      throw new PGXAException(GT.tr("Error rolling back prepared transaction. rollback xid={0}, preparedXid={1}, currentXid={2}", xid, preparedXid, currentXid), ex, errorCode);
     }
   }
 
@@ -504,7 +508,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
   }
 
   /**
-   * <p>Preconditions:</p>
+   * Preconditions:
    * <ol>
    *     <li>xid must in ended state.</li>
    * </ol>
@@ -555,7 +559,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
   }
 
   /**
-   * <p>Commits prepared transaction. Preconditions:</p>
+   * Commits prepared transaction. Preconditions:
    * <ol>
    *     <li>xid must be in prepared state in the server</li>
    * </ol>
@@ -648,7 +652,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
     return false;
   }
 
-  private int mapSQLStateToXAErrorCode(SQLException sqlException) {
+  private static int mapSQLStateToXAErrorCode(SQLException sqlException) {
     if (isPostgreSQLIntegrityConstraintViolation(sqlException)) {
       return XAException.XA_RBINTEGRITY;
     }
@@ -656,7 +660,7 @@ public class PGXAConnection extends PGPooledConnection implements XAConnection, 
     return XAException.XAER_RMFAIL;
   }
 
-  private boolean isPostgreSQLIntegrityConstraintViolation(SQLException sqlException) {
+  private static boolean isPostgreSQLIntegrityConstraintViolation(SQLException sqlException) {
     if (!(sqlException instanceof PSQLException)) {
       return false;
     }

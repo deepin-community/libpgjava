@@ -5,6 +5,8 @@
 
 package org.postgresql.core;
 
+import org.postgresql.util.ByteConverter;
+
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -53,7 +55,7 @@ public class VisibleBufferedInputStream extends InputStream {
   /**
    * socket timeout has been requested
    */
-  private boolean timeoutRequested = false;
+  private boolean timeoutRequested;
 
   /**
    * Creates a new buffer around the given stream.
@@ -69,11 +71,40 @@ public class VisibleBufferedInputStream extends InputStream {
   /**
    * {@inheritDoc}
    */
+  @Override
   public int read() throws IOException {
     if (ensureBytes(1)) {
       return buffer[index++] & 0xFF;
     }
     return -1;
+  }
+
+  /**
+   * Reads an int2 value from the underlying stream as an unsigned integer (0..65535).
+   * @return int2 in the range of 0..65535
+   * @throws IOException if an I/ O error occurs.
+   */
+  public int readInt2() throws IOException {
+    if (ensureBytes(2)) {
+      int res = ByteConverter.int2(buffer, index) & 0xffff;
+      index += 2;
+      return res;
+    }
+    throw new EOFException("End of stream reached while trying to read integer2");
+  }
+
+  /**
+   * Reads an int4 value from the underlying stream.
+   * @return int4 value from the underlying stream
+   * @throws IOException if an I/ O error occurs.
+   */
+  public int readInt4() throws IOException {
+    if (ensureBytes(4)) {
+      int res = ByteConverter.int4(buffer, index);
+      index += 4;
+      return res;
+    }
+    throw new EOFException("End of stream reached while trying to read integer4");
   }
 
   /**
@@ -90,7 +121,7 @@ public class VisibleBufferedInputStream extends InputStream {
   }
 
   /**
-   * Reads byte from the buffer without any checks. This method never reads from the underlaying
+   * Reads byte from the buffer without any checks. This method never reads from the underlying
    * stream. Before calling this method the {@link #ensureBytes} method must have been called.
    *
    * @return The next byte from the buffer.
@@ -209,6 +240,7 @@ public class VisibleBufferedInputStream extends InputStream {
   /**
    * {@inheritDoc}
    */
+  @Override
   public int read(byte[] to, int off, int len) throws IOException {
     if ((off | len | (off + len) | (to.length - (off + len))) < 0) {
       throw new IndexOutOfBoundsException();
@@ -253,7 +285,7 @@ public class VisibleBufferedInputStream extends InputStream {
         return read;
       }
       if (r <= 0) {
-        return (read == 0) ? r : read;
+        return read == 0 ? r : read;
       }
       read += r;
       off += r;
@@ -266,10 +298,13 @@ public class VisibleBufferedInputStream extends InputStream {
   /**
    * {@inheritDoc}
    */
+  @Override
   public long skip(long n) throws IOException {
     int avail = endIndex - index;
     if (avail >= n) {
-      index += n;
+      // Cast to int is safe here since the number of available bytes within the buffer
+      // always fits within int
+      index += (int) n;
       return n;
     }
     n -= avail;
@@ -281,6 +316,7 @@ public class VisibleBufferedInputStream extends InputStream {
   /**
    * {@inheritDoc}
    */
+  @Override
   public int available() throws IOException {
     int avail = endIndex - index;
     return avail > 0 ? avail : wrapped.available();
@@ -289,6 +325,7 @@ public class VisibleBufferedInputStream extends InputStream {
   /**
    * {@inheritDoc}
    */
+  @Override
   public void close() throws IOException {
     wrapped.close();
   }
@@ -297,7 +334,7 @@ public class VisibleBufferedInputStream extends InputStream {
    * Returns direct handle to the used buffer. Use the {@link #ensureBytes} to prefill required
    * bytes the buffer and {@link #getIndex} to fetch the current position of the buffer.
    *
-   * @return The underlaying buffer.
+   * @return The underlying buffer.
    */
   public byte[] getBuffer() {
     return buffer;
@@ -339,8 +376,8 @@ public class VisibleBufferedInputStream extends InputStream {
   }
 
   /**
-   *
-   * @return the wrapped stream
+   * Returns the underlying stream.
+   * @return the underlying stream
    */
   public InputStream getWrapped() {
     return wrapped;

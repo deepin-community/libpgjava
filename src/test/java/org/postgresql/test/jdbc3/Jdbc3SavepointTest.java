@@ -5,14 +5,16 @@
 
 package org.postgresql.test.jdbc3;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.postgresql.test.TestUtil;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -21,25 +23,38 @@ import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Statement;
 
-public class Jdbc3SavepointTest {
+class Jdbc3SavepointTest {
 
   private Connection conn;
 
-  @Before
-  public void setUp() throws Exception {
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection conn = TestUtil.openDB()) {
+      TestUtil.createTable(conn, "savepointtable", "id int primary key");
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection conn = TestUtil.openDB()) {
+      TestUtil.dropTable(conn, "savepointtable");
+    }
+  }
+
+  @BeforeEach
+  void setUp() throws Exception {
     conn = TestUtil.openDB();
-    TestUtil.createTable(conn, "savepointtable", "id int primary key");
+    TestUtil.execute(conn, "TRUNCATE savepointtable CASCADE");
     conn.setAutoCommit(false);
   }
 
-  @After
-  public void tearDown() throws SQLException {
+  @AfterEach
+  void tearDown() throws SQLException {
     conn.setAutoCommit(true);
-    TestUtil.dropTable(conn, "savepointtable");
     TestUtil.closeDB(conn);
   }
 
-  private boolean hasSavepoints() throws SQLException {
+  private static boolean hasSavepoints() throws SQLException {
     return true;
   }
 
@@ -60,7 +75,7 @@ public class Jdbc3SavepointTest {
   }
 
   @Test
-  public void testAutoCommitFails() throws SQLException {
+  void autoCommitFails() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }
@@ -81,7 +96,7 @@ public class Jdbc3SavepointTest {
   }
 
   @Test
-  public void testCantMixSavepointTypes() throws SQLException {
+  void cantMixSavepointTypes() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }
@@ -100,11 +115,10 @@ public class Jdbc3SavepointTest {
       fail("Can't get name from unnamed savepoint.");
     } catch (SQLException sqle) {
     }
-
   }
 
   @Test
-  public void testRollingBackToSavepoints() throws SQLException {
+  void rollingBackToSavepoints() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }
@@ -122,7 +136,7 @@ public class Jdbc3SavepointTest {
   }
 
   @Test
-  public void testGlobalRollbackWorks() throws SQLException {
+  void globalRollbackWorks() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }
@@ -138,7 +152,7 @@ public class Jdbc3SavepointTest {
   }
 
   @Test
-  public void testContinueAfterError() throws SQLException {
+  void continueAfterError() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }
@@ -158,7 +172,7 @@ public class Jdbc3SavepointTest {
   }
 
   @Test
-  public void testReleaseSavepoint() throws SQLException {
+  void releaseSavepoint() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }
@@ -181,7 +195,7 @@ public class Jdbc3SavepointTest {
   }
 
   @Test
-  public void testComplicatedSavepointName() throws SQLException {
+  void complicatedSavepointName() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }
@@ -192,7 +206,7 @@ public class Jdbc3SavepointTest {
   }
 
   @Test
-  public void testRollingBackToInvalidSavepointFails() throws SQLException {
+  void rollingBackToInvalidSavepointFails() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }
@@ -209,7 +223,7 @@ public class Jdbc3SavepointTest {
   }
 
   @Test
-  public void testRollbackMultipleTimes() throws SQLException {
+  void rollbackMultipleTimes() throws SQLException {
     if (!hasSavepoints()) {
       return;
     }

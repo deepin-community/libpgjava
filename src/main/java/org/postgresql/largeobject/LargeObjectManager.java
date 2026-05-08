@@ -56,6 +56,7 @@ import java.util.logging.Level;
  * @see java.sql.PreparedStatement#setBinaryStream
  * @see java.sql.PreparedStatement#setUnicodeStream
  */
+@SuppressWarnings("deprecation") // support for deprecated Fastpath API
 public class LargeObjectManager {
   // the fastpath api for this connection
   private Fastpath fp;
@@ -77,7 +78,7 @@ public class LargeObjectManager {
   public static final int READWRITE = READ | WRITE;
 
   /**
-   * <p>Constructs the LargeObject API.</p>
+   * Constructs the LargeObject API.
    *
    * <p><b>Important Notice</b> <br>
    * This method should only be called by {@link BaseConnection}</p>
@@ -144,7 +145,7 @@ public class LargeObjectManager {
    */
   @Deprecated
   public LargeObject open(int oid) throws SQLException {
-    return open((long) oid, false);
+    return open((long) oid);
   }
 
   /**
@@ -247,7 +248,7 @@ public class LargeObjectManager {
   }
 
   /**
-   * <p>This creates a large object, returning its OID.</p>
+   * This creates a large object, returning its OID.
    *
    * <p>It defaults to READWRITE for the new object's attributes.</p>
    *
@@ -261,7 +262,7 @@ public class LargeObjectManager {
   }
 
   /**
-   * <p>This creates a large object, returning its OID.</p>
+   * This creates a large object, returning its OID.
    *
    * <p>It defaults to READWRITE for the new object's attributes.</p>
    *
@@ -316,7 +317,7 @@ public class LargeObjectManager {
   }
 
   /**
-   * <p>This deletes a large object.</p>
+   * This deletes a large object.
    *
    * <p>It is identical to the delete method, and is supplied as the C API uses unlink.</p>
    *
@@ -330,7 +331,7 @@ public class LargeObjectManager {
   }
 
   /**
-   * <p>This deletes a large object.</p>
+   * This deletes a large object.
    *
    * <p>It is identical to the delete method, and is supplied as the C API uses unlink.</p>
    *

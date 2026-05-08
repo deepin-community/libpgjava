@@ -5,14 +5,16 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.postgresql.test.TestUtil;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,51 +33,49 @@ import javax.sql.rowset.serial.SerialBlob;
  * Test that oid/lob are accessible in concurrent connection, in presence of the lo_manage trigger.
  * Require the lo module accessible in $libdir
  */
-public class BlobTransactionTest {
+class BlobTransactionTest {
   private Connection con;
   private Connection con2;
 
-  @Before
-  public void setUp() throws Exception {
-    con = TestUtil.openDB();
-    con.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-    con2 = TestUtil.openDB();
-    con2.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-
-    TestUtil.createTable(con, "testblob", "id name,lo oid");
-
-    String sql;
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.createTable(con, "testblob", "id name,lo oid");
+    }
 
     /*
      * this would have to be executed using the postgres user in order to get access to a C function
      *
      */
-    Connection privilegedCon = TestUtil.openPrivilegedDB();
-    Statement st = privilegedCon.createStatement();
-    try {
-      sql =
-          "CREATE OR REPLACE FUNCTION lo_manage() RETURNS pg_catalog.trigger AS '$libdir/lo' LANGUAGE C";
-      st.executeUpdate(sql);
-    } finally {
-      st.close();
-    }
+    try (Connection privilegedCon = TestUtil.openPrivilegedDB()) {
+      TestUtil.execute(privilegedCon,
+          "CREATE OR REPLACE FUNCTION lo_manage() RETURNS pg_catalog.trigger AS '$libdir/lo' LANGUAGE C");
 
-    st = privilegedCon.createStatement();
-    try {
-      sql =
-          "CREATE TRIGGER testblob_lomanage BEFORE UPDATE OR DELETE ON testblob FOR EACH ROW EXECUTE PROCEDURE lo_manage(lo)";
-      st.executeUpdate(sql);
-    } finally {
-      st.close();
+      TestUtil.execute(privilegedCon,
+          "CREATE TRIGGER testblob_lomanage BEFORE UPDATE OR DELETE ON testblob FOR EACH ROW EXECUTE PROCEDURE lo_manage(lo)");
     }
-    TestUtil.closeDB(privilegedCon);
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.dropTable(con, "testblob");
+    }
+  }
+
+  @BeforeEach
+  void setUp() throws Exception {
+    con = TestUtil.openDB();
+    con.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+    con2 = TestUtil.openDB();
+    con2.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
 
     con.setAutoCommit(false);
     con2.setAutoCommit(false);
   }
 
-  @After
-  public void tearDown() throws Exception {
+  @AfterEach
+  void tearDown() throws Exception {
     TestUtil.closeDB(con2);
 
     con.setAutoCommit(true);
@@ -90,20 +90,20 @@ public class BlobTransactionTest {
         }
       }
     } finally {
-      TestUtil.dropTable(con, "testblob");
+      TestUtil.execute(con, "TRUNCATE TABLE testblob");
       TestUtil.closeDB(con);
     }
   }
 
-  private byte[] randomData() {
+  private static byte[] randomData() {
     byte[] data = new byte[64 * 1024 * 8];
-    for (int i = 0; i < data.length; ++i) {
+    for (int i = 0; i < data.length; i++) {
       data[i] = (byte) (Math.random() * 256);
     }
     return data;
   }
 
-  private byte[] readInputStream(InputStream is) throws IOException {
+  private static byte[] readInputStream(InputStream is) throws IOException {
     byte[] result = new byte[1024];
     int readPos = 0;
     int d;
@@ -118,7 +118,7 @@ public class BlobTransactionTest {
   }
 
   @Test
-  public void testConcurrentReplace() throws SQLException, IOException {
+  void concurrentReplace() throws SQLException, IOException {
     // Statement stmt = con.createStatement();
     // stmt.execute("INSERT INTO testblob(id,lo) VALUES ('1', lo_creat(-1))");
     // ResultSet rs = stmt.executeQuery("SELECT lo FROM testblob");
@@ -153,7 +153,7 @@ public class BlobTransactionTest {
     Blob initContentBlob = rs2.getBlob(1);
     byte[] initialContentReRead = readInputStream(initContentBlob.getBinaryStream());
     assertEquals(initialContentReRead.length, initialData.length);
-    for (int i = 0; i < initialContentReRead.length; ++i) {
+    for (int i = 0; i < initialContentReRead.length; i++) {
       assertEquals(initialContentReRead[i], initialData[i]);
     }
 
@@ -169,7 +169,7 @@ public class BlobTransactionTest {
     initContentBlob = rs2.getBlob(1);
     initialContentReRead = readInputStream(initContentBlob.getBinaryStream());
     assertEquals(initialContentReRead.length, initialData.length);
-    for (int i = 0; i < initialContentReRead.length; ++i) {
+    for (int i = 0; i < initialContentReRead.length; i++) {
       assertEquals(initialContentReRead[i], initialData[i]);
     }
 

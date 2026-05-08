@@ -5,20 +5,22 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import org.postgresql.PGConnection;
 import org.postgresql.test.TestUtil;
 
-import org.junit.Assert;
-import org.junit.Assume;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import java.io.ByteArrayInputStream;
 import java.io.StringReader;
@@ -34,58 +36,78 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.TimeZone;
 
+@Isolated("Uses TimeZone.setDefault")
 public class UpdateableResultTest extends BaseTest4 {
+
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.createTable(con, "updateable",
+          "id int primary key, name text, notselected text, ts timestamp with time zone, intarr int[]");
+      TestUtil.createTable(con, "hasdate", "id int primary key, dt date unique, name text");
+      TestUtil.createTable(con, "unique_null_constraint", "u1 int unique, name1 text");
+      TestUtil.createTable(con, "uniquekeys", "id int unique not null, id2 int unique, dt date");
+      TestUtil.createTable(con, "partialunique", "subject text, target text, success boolean");
+      TestUtil.execute(con, "CREATE UNIQUE INDEX tests_success_constraint ON partialunique (subject, target) WHERE success");
+      TestUtil.createTable(con, "second", "id1 int primary key, name1 text");
+      TestUtil.createTable(con, "primaryunique", "id int primary key, name text unique not null, dt date");
+      TestUtil.createTable(con, "serialtable", "gen_id serial primary key, name text");
+      TestUtil.createTable(con, "compositepktable", "gen_id serial, name text, dec_id serial");
+      TestUtil.execute(con, "alter sequence compositepktable_dec_id_seq increment by 10; alter sequence compositepktable_dec_id_seq restart with 10");
+      TestUtil.execute(con, "alter table compositepktable add primary key ( gen_id, dec_id )");
+      TestUtil.createTable(con, "stream", "id int primary key, asi text, chr text, bin bytea");
+      TestUtil.createTable(con, "multicol", "id1 int not null, id2 int not null, val text");
+      TestUtil.execute(con, "ALTER TABLE multicol ADD CONSTRAINT multicol_pk PRIMARY KEY (id1, id2)");
+      TestUtil.createTable(con, "nopkmulticol", "id1 int not null, id2 int not null, val text");
+      TestUtil.createTable(con, "booltable", "id int not null primary key, b boolean default false");
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.dropTable(con, "updateable");
+      TestUtil.dropTable(con, "second");
+      TestUtil.dropTable(con, "serialtable");
+      TestUtil.dropTable(con, "compositepktable");
+      TestUtil.dropTable(con, "stream");
+      TestUtil.dropTable(con, "multicol");
+      TestUtil.dropTable(con, "nopkmulticol");
+      TestUtil.dropTable(con, "booltable");
+      TestUtil.dropTable(con, "unique_null_constraint");
+      TestUtil.dropTable(con, "hasdate");
+      TestUtil.dropTable(con, "uniquekeys");
+      TestUtil.dropTable(con, "partialunique");
+      TestUtil.dropTable(con, "primaryunique");
+    }
+  }
 
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    TestUtil.createTable(con, "updateable",
-        "id int primary key, name text, notselected text, ts timestamp with time zone, intarr int[]");
-    TestUtil.createTable(con, "hasdate", "id int primary key, dt date unique, name text");
-    TestUtil.createTable(con, "unique_null_constraint", "u1 int unique, name1 text");
-    TestUtil.createTable(con, "uniquekeys", "id int unique not null, id2 int unique, dt date");
-    TestUtil.createTable(con, "partialunique", "subject text, target text, success boolean");
-    TestUtil.execute("CREATE UNIQUE INDEX tests_success_constraint ON partialunique (subject, target) WHERE success", con);
-    TestUtil.createTable(con, "second", "id1 int primary key, name1 text");
-    TestUtil.createTable(con, "primaryunique", "id int primary key, name text unique not null, dt date");
-    TestUtil.createTable(con, "serialtable", "gen_id serial primary key, name text");
-    TestUtil.createTable(con, "compositepktable", "gen_id serial, name text, dec_id serial");
-    TestUtil.execute( "alter sequence compositepktable_dec_id_seq increment by 10; alter sequence compositepktable_dec_id_seq restart with 10", con);
-    TestUtil.execute( "alter table compositepktable add primary key ( gen_id, dec_id )", con);
-    TestUtil.createTable(con, "stream", "id int primary key, asi text, chr text, bin bytea");
-    TestUtil.createTable(con, "multicol", "id1 int not null, id2 int not null, val text");
-    TestUtil.createTable(con, "nopkmulticol", "id1 int not null, id2 int not null, val text");
-    TestUtil.createTable(con, "booltable", "id int not null primary key, b boolean default false");
-    TestUtil.execute("insert into booltable (id) values (1)", con);
-    TestUtil.execute("insert into uniquekeys(id, id2, dt) values (1, 2, now())", con);
+    TestUtil.execute(con, "TRUNCATE updateable CASCADE");
+    TestUtil.execute(con, "TRUNCATE hasdate CASCADE");
+    TestUtil.execute(con, "TRUNCATE unique_null_constraint");
+    TestUtil.execute(con, "TRUNCATE uniquekeys CASCADE");
+    TestUtil.execute(con, "TRUNCATE partialunique");
+    TestUtil.execute(con, "TRUNCATE second CASCADE");
+    TestUtil.execute(con, "TRUNCATE primaryunique CASCADE");
+    TestUtil.execute(con, "TRUNCATE serialtable CASCADE");
+    TestUtil.execute(con, "TRUNCATE compositepktable CASCADE");
+    TestUtil.execute(con, "ALTER SEQUENCE compositepktable_gen_id_seq RESTART WITH 1");
+    TestUtil.execute(con, "ALTER SEQUENCE compositepktable_dec_id_seq RESTART WITH 10");
+    TestUtil.execute(con, "TRUNCATE stream CASCADE");
+    TestUtil.execute(con, "TRUNCATE multicol CASCADE");
+    TestUtil.execute(con, "TRUNCATE nopkmulticol");
+    TestUtil.execute(con, "TRUNCATE booltable CASCADE");
+    TestUtil.execute(con, "ALTER SEQUENCE serialtable_gen_id_seq RESTART WITH 1");
 
-    Statement st2 = con.createStatement();
-    // create pk for multicol table
-    st2.execute("ALTER TABLE multicol ADD CONSTRAINT multicol_pk PRIMARY KEY (id1, id2)");
-    // put some dummy data into second
-    st2.execute("insert into second values (1,'anyvalue' )");
-    st2.close();
-    TestUtil.execute("insert into unique_null_constraint values (1, 'dave')", con);
-    TestUtil.execute("insert into unique_null_constraint values (null, 'unknown')", con);
-    TestUtil.execute("insert into primaryunique values (1, 'dave', now())", con);
-
-  }
-
-  @Override
-  public void tearDown() throws SQLException {
-    TestUtil.dropTable(con, "updateable");
-    TestUtil.dropTable(con, "second");
-    TestUtil.dropTable(con, "serialtable");
-    TestUtil.dropTable(con, "compositepktable");
-    TestUtil.dropTable(con, "stream");
-    TestUtil.dropTable(con, "nopkmulticol");
-    TestUtil.dropTable(con, "booltable");
-    TestUtil.dropTable(con, "unique_null_constraint");
-    TestUtil.dropTable(con, "hasdate");
-    TestUtil.dropTable(con, "uniquekeys");
-    TestUtil.dropTable(con, "partialunique");
-    TestUtil.dropTable(con, "primaryunique");
-    super.tearDown();
+    TestUtil.execute(con, "insert into booltable (id) values (1)");
+    TestUtil.execute(con, "insert into uniquekeys(id, id2, dt) values (1, 2, now())");
+    TestUtil.execute(con, "insert into second values (1,'anyvalue' )");
+    TestUtil.execute(con, "insert into unique_null_constraint values (1, 'dave')");
+    TestUtil.execute(con, "insert into unique_null_constraint values (null, 'unknown')");
+    TestUtil.execute(con, "insert into primaryunique values (1, 'dave', now())");
   }
 
   @Test
@@ -154,7 +176,7 @@ public class UpdateableResultTest extends BaseTest4 {
     st.close();
   }
 
-  private void checkPositioning(ResultSet rs) throws SQLException {
+  private static void checkPositioning(ResultSet rs) throws SQLException {
     try {
       rs.getInt(1);
       fail("Can't use an incorrectly positioned result set.");
@@ -308,7 +330,6 @@ public class UpdateableResultTest extends BaseTest4 {
 
   @Test
   public void testUpdateStreams() throws SQLException, UnsupportedEncodingException {
-    assumeByteaSupported();
     String string = "Hello";
     byte[] bytes = new byte[]{0, '\\', (byte) 128, (byte) 255};
 
@@ -464,7 +485,7 @@ public class UpdateableResultTest extends BaseTest4 {
   @Test
   public void testUpdateDate() throws Exception {
     Date testDate = Date.valueOf("2021-01-01");
-    TestUtil.execute("insert into hasdate values (1,'2021-01-01'::date)", con);
+    TestUtil.execute(con, "insert into hasdate values (1,'2021-01-01'::date)");
     con.setAutoCommit(false);
     String sql = "SELECT * FROM hasdate where id=1";
     ResultSet rs = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE,
@@ -693,7 +714,7 @@ public class UpdateableResultTest extends BaseTest4 {
   @Test
   public void simpleAndUpdateableSameQuery() throws Exception {
     PGConnection unwrap = con.unwrap(PGConnection.class);
-    Assume.assumeNotNull(unwrap);
+    assumeTrue(unwrap != null, "con.unwrap(PGConnection.class) should not be null");
     int prepareThreshold = unwrap.getPrepareThreshold();
     String sql = "select * from second where id1=?";
     for (int i = 0; i <= prepareThreshold; i++) {
@@ -705,9 +726,9 @@ public class UpdateableResultTest extends BaseTest4 {
         rs = ps.executeQuery();
         rs.next();
         String name1 = rs.getString("name1");
-        Assert.assertEquals("anyvalue", name1);
+        assertEquals("anyvalue", name1);
         int id1 = rs.getInt("id1");
-        Assert.assertEquals(1, id1);
+        assertEquals(1, id1);
       } finally {
         TestUtil.closeQuietly(rs);
         TestUtil.closeQuietly(ps);
@@ -723,9 +744,9 @@ public class UpdateableResultTest extends BaseTest4 {
         rs = ps.executeQuery();
         rs.next();
         String name1 = rs.getString("name1");
-        Assert.assertEquals("anyvalue", name1);
+        assertEquals("anyvalue", name1);
         int id1 = rs.getInt("id1");
-        Assert.assertEquals(1, id1);
+        assertEquals(1, id1);
         rs.updateString("name1", "updatedValue");
         rs.updateRow();
       } finally {
@@ -751,8 +772,7 @@ public class UpdateableResultTest extends BaseTest4 {
 
   @Test
   public void testOidUpdatable() throws Exception {
-    Connection privilegedCon = TestUtil.openPrivilegedDB();
-    try {
+    try (Connection privilegedCon = TestUtil.openPrivilegedDB()) {
       Statement st = privilegedCon.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE,
           ResultSet.CONCUR_UPDATABLE);
       ResultSet rs = st.executeQuery("SELECT oid,* FROM pg_class WHERE relname = 'pg_class'");
@@ -762,8 +782,6 @@ public class UpdateableResultTest extends BaseTest4 {
       rs.updateRow();
       rs.close();
       st.close();
-    } finally {
-      privilegedCon.close();
     }
   }
 
@@ -778,8 +796,7 @@ public class UpdateableResultTest extends BaseTest4 {
       rs.updateString("name1", "bob");
       fail("Should have failed since unique column u1 is nullable");
     } catch (SQLException ex) {
-      assertEquals("No eligible primary or unique key found for table unique_null_constraint.",
-          ex.getMessage());
+      assertEquals("No eligible primary or unique key found for table unique_null_constraint.", ex.getMessage());
     }
     rs.close();
     st.close();
@@ -832,8 +849,8 @@ public class UpdateableResultTest extends BaseTest4 {
     ResultSet rs = st.executeQuery("SELECT id, id2, dt from uniquekeys");
     assertTrue(rs.next());
     assertTrue(rs.first());
-    id = rs.getInt(("id"));
-    id2 = rs.getInt(("id2"));
+    id = rs.getInt("id");
+    id2 = rs.getInt("id2");
     rs.updateDate("dt", Date.valueOf("1999-01-01"));
     rs.updateRow();
     rs.close();
@@ -853,7 +870,7 @@ public class UpdateableResultTest extends BaseTest4 {
     ResultSet rs = st.executeQuery("SELECT id, dt from uniquekeys");
     assertTrue(rs.next());
     assertTrue(rs.first());
-    id = rs.getInt(("id"));
+    id = rs.getInt("id");
     rs.updateDate("dt", Date.valueOf("1999-01-01"));
     rs.updateRow();
     rs.close();
@@ -876,8 +893,7 @@ public class UpdateableResultTest extends BaseTest4 {
       rs.updateDate("dt", Date.valueOf("1999-01-01"));
       fail("Should have failed since id2 is nullable column");
     } catch (SQLException ex) {
-      assertEquals("No eligible primary or unique key found for table uniquekeys.",
-          ex.getMessage());
+      assertEquals("No eligible primary or unique key found for table uniquekeys.", ex.getMessage());
     }
     rs.close();
     st.close();
@@ -894,8 +910,7 @@ public class UpdateableResultTest extends BaseTest4 {
       rs.updateDate("dt", Date.valueOf("1999-01-01"));
       fail("Should have failed since no UK/PK are in the select statement");
     } catch (SQLException ex) {
-      assertEquals("No eligible primary or unique key found for table uniquekeys.",
-          ex.getMessage());
+      assertEquals("No eligible primary or unique key found for table uniquekeys.", ex.getMessage());
     }
     rs.close();
     st.close();

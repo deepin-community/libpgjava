@@ -10,15 +10,18 @@ import org.postgresql.PGProperty;
 import org.postgresql.jdbc.AutoSave;
 import org.postgresql.jdbc.EscapeSyntaxCallMode;
 import org.postgresql.jdbc.PreferQueryMode;
+import org.postgresql.jdbc.ResourceLock;
 import org.postgresql.util.HostSpec;
 import org.postgresql.util.LruCache;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
 import org.postgresql.util.ServerErrorMessage;
 
+// import org.checkerframework.checker.lock.qual.Holding;
 // import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 // import org.checkerframework.checker.nullness.qual.Nullable;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
@@ -27,6 +30,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
+import java.util.concurrent.locks.Condition;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -38,53 +42,57 @@ public abstract class QueryExecutorBase implements QueryExecutor {
   private final String database;
   private final int cancelSignalTimeout;
 
+  protected ProtocolVersion protocolVersion;
   private int cancelPid;
-  private int cancelKey;
-  private boolean closed = false;
+  private byte /* @Nullable */[] cancelKey;
+  protected final QueryExecutorCloseAction closeAction;
   private /* @MonotonicNonNull */ String serverVersion;
-  private int serverVersionNum = 0;
-  private TransactionState transactionState = TransactionState.IDLE;
+  private int serverVersionNum;
+  private volatile TransactionState transactionState = TransactionState.IDLE;
   private final boolean reWriteBatchedInserts;
   private final boolean columnSanitiserDisabled;
   private final EscapeSyntaxCallMode escapeSyntaxCallMode;
   private final boolean quoteReturningIdentifiers;
-  private final PreferQueryMode preferQueryMode;
+  private PreferQueryMode preferQueryMode;
   private AutoSave autoSave;
   private boolean flushCacheOnDeallocate = true;
   protected final boolean logServerErrorDetail;
 
   // default value for server versions that don't report standard_conforming_strings
-  private boolean standardConformingStrings = false;
+  private volatile boolean standardConformingStrings;
 
   private /* @Nullable */ SQLWarning warnings;
-  private final ArrayList<PGNotification> notifications = new ArrayList<PGNotification>();
+  private final ArrayList<PGNotification> notifications = new ArrayList<>();
 
   private final LruCache<Object, CachedQuery> statementCache;
   private final CachedQueryCreateAction cachedQueryCreateAction;
 
   // For getParameterStatuses(), GUC_REPORT tracking
   private final TreeMap<String,String> parameterStatuses
-      = new TreeMap<String,String>(String.CASE_INSENSITIVE_ORDER);
+      = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
-  @SuppressWarnings({"assignment.type.incompatible", "argument.type.incompatible"})
-  protected QueryExecutorBase(PGStream pgStream, String user,
-      String database, int cancelSignalTimeout, Properties info) throws SQLException {
+  protected final ResourceLock lock = new ResourceLock();
+  protected final Condition lockCondition = lock.newCondition();
+
+  @SuppressWarnings({"assignment", "argument", "method.invocation"})
+  protected QueryExecutorBase(PGStream pgStream, int cancelSignalTimeout, Properties info) throws SQLException {
     this.pgStream = pgStream;
-    this.user = user;
-    this.database = database;
+    this.protocolVersion = pgStream.getProtocolVersion();
+    this.user = PGProperty.USER.getOrDefault(info);
+    this.database = PGProperty.PG_DBNAME.getOrDefault(info);
     this.cancelSignalTimeout = cancelSignalTimeout;
     this.reWriteBatchedInserts = PGProperty.REWRITE_BATCHED_INSERTS.getBoolean(info);
     this.columnSanitiserDisabled = PGProperty.DISABLE_COLUMN_SANITISER.getBoolean(info);
-    String callMode = PGProperty.ESCAPE_SYNTAX_CALL_MODE.get(info);
+    String callMode = PGProperty.ESCAPE_SYNTAX_CALL_MODE.getOrDefault(info);
     this.escapeSyntaxCallMode = EscapeSyntaxCallMode.of(callMode);
     this.quoteReturningIdentifiers = PGProperty.QUOTE_RETURNING_IDENTIFIERS.getBoolean(info);
-    String preferMode = PGProperty.PREFER_QUERY_MODE.get(info);
+    String preferMode = PGProperty.PREFER_QUERY_MODE.getOrDefault(info);
     this.preferQueryMode = PreferQueryMode.of(preferMode);
-    this.autoSave = AutoSave.of(PGProperty.AUTOSAVE.get(info));
+    this.autoSave = AutoSave.of(PGProperty.AUTOSAVE.getOrDefault(info));
     this.logServerErrorDetail = PGProperty.LOG_SERVER_ERROR_DETAIL.getBoolean(info);
-    // assignment.type.incompatible, argument.type.incompatible
+    // assignment, argument
     this.cachedQueryCreateAction = new CachedQueryCreateAction(this);
-    statementCache = new LruCache<Object, CachedQuery>(
+    statementCache = new LruCache<>(
         Math.max(0, PGProperty.PREPARED_STATEMENT_CACHE_QUERIES.getInt(info)),
         Math.max(0, PGProperty.PREPARED_STATEMENT_CACHE_SIZE_MIB.getInt(info) * 1024L * 1024L),
         false,
@@ -95,8 +103,20 @@ public abstract class QueryExecutorBase implements QueryExecutor {
             cachedQuery.query.close();
           }
         });
+    // method.invocation
+    this.closeAction = createCloseAction();
   }
 
+  protected QueryExecutorCloseAction createCloseAction() {
+    return new QueryExecutorCloseAction(pgStream);
+  }
+
+  /**
+   * Sends "terminate connection" message to the backend.
+   * @throws IOException in case connection termination fails
+   * @deprecated use {@link #getCloseAction()} instead
+   */
+  @Deprecated
   protected abstract void sendCloseMessage() throws IOException;
 
   @Override
@@ -124,7 +144,7 @@ public abstract class QueryExecutorBase implements QueryExecutor {
     return database;
   }
 
-  public void setBackendKeyData(int cancelPid, int cancelKey) {
+  public void setBackendKeyData(int cancelPid, byte[] cancelKey) {
     this.cancelPid = cancelPid;
     this.cancelKey = cancelKey;
   }
@@ -136,35 +156,30 @@ public abstract class QueryExecutorBase implements QueryExecutor {
 
   @Override
   public void abort() {
-    try {
-      pgStream.getSocket().close();
-    } catch (IOException e) {
-      // ignore
-    }
-    closed = true;
+    closeAction.abort();
+  }
+
+  @Override
+  public Closeable getCloseAction() {
+    return closeAction;
   }
 
   @Override
   public void close() {
-    if (closed) {
+    if (closeAction.isClosed()) {
       return;
     }
 
     try {
-      LOGGER.log(Level.FINEST, " FE=> Terminate");
-      sendCloseMessage();
-      pgStream.flush();
-      pgStream.close();
+      getCloseAction().close();
     } catch (IOException ioe) {
       LOGGER.log(Level.FINEST, "Discarding IOException on close:", ioe);
     }
-
-    closed = true;
   }
 
   @Override
   public boolean isClosed() {
-    return closed;
+    return closeAction.isClosed();
   }
 
   @Override
@@ -174,20 +189,27 @@ public abstract class QueryExecutorBase implements QueryExecutor {
 
     // Now we need to construct and send a cancel packet
     try {
+      byte[] cancelKey = this.cancelKey;
+      if (cancelKey == null) {
+        LOGGER.log(Level.FINEST, " FE=> Can''t send cancel request since cancelKey is null. It might be the cancel key is not received yet");
+        return;
+      }
       if (LOGGER.isLoggable(Level.FINEST)) {
         LOGGER.log(Level.FINEST, " FE=> CancelRequest(pid={0},ckey={1})", new Object[]{cancelPid, cancelKey});
       }
 
+      // Cancel signal is variable since protocol 3.2 so we use cancelKey.length + 12
       cancelStream =
-          new PGStream(pgStream.getSocketFactory(), pgStream.getHostSpec(), cancelSignalTimeout);
+          new PGStream(pgStream.getSocketFactory(), pgStream.getHostSpec(), cancelSignalTimeout, cancelKey.length + 12);
       if (cancelSignalTimeout > 0) {
         cancelStream.setNetworkTimeout(cancelSignalTimeout);
       }
-      cancelStream.sendInteger4(16);
+      // send the length including self
+      cancelStream.sendInteger4(cancelKey.length + 12);
       cancelStream.sendInteger2(1234);
       cancelStream.sendInteger2(5678);
       cancelStream.sendInteger4(cancelPid);
-      cancelStream.sendInteger4(cancelKey);
+      cancelStream.send(cancelKey);
       cancelStream.flush();
       cancelStream.receiveEOF();
     } catch (IOException e) {
@@ -204,30 +226,38 @@ public abstract class QueryExecutorBase implements QueryExecutor {
     }
   }
 
-  public synchronized void addWarning(SQLWarning newWarning) {
-    if (warnings == null) {
-      warnings = newWarning;
-    } else {
-      warnings.setNextWarning(newWarning);
+  public void addWarning(SQLWarning newWarning) {
+    try (ResourceLock ignore = lock.obtain()) {
+      if (warnings == null) {
+        warnings = newWarning;
+      } else {
+        warnings.setNextWarning(newWarning);
+      }
     }
   }
 
-  public synchronized void addNotification(PGNotification notification) {
-    notifications.add(notification);
+  public void addNotification(PGNotification notification) {
+    try (ResourceLock ignore = lock.obtain()) {
+      notifications.add(notification);
+    }
   }
 
   @Override
-  public synchronized PGNotification[] getNotifications() throws SQLException {
-    PGNotification[] array = notifications.toArray(new PGNotification[0]);
-    notifications.clear();
-    return array;
+  public PGNotification[] getNotifications() throws SQLException {
+    try (ResourceLock ignore = lock.obtain()) {
+      PGNotification[] array = notifications.toArray(new PGNotification[0]);
+      notifications.clear();
+      return array;
+    }
   }
 
   @Override
-  public synchronized /* @Nullable */ SQLWarning getWarnings() {
-    SQLWarning chain = warnings;
-    warnings = null;
-    return chain;
+  public /* @Nullable */ SQLWarning getWarnings() {
+    try (ResourceLock ignore = lock.obtain()) {
+      SQLWarning chain = warnings;
+      warnings = null;
+      return chain;
+    }
   }
 
   @Override
@@ -244,7 +274,8 @@ public abstract class QueryExecutorBase implements QueryExecutor {
     if (serverVersionNum != 0) {
       return serverVersionNum;
     }
-    return serverVersionNum = Utils.parseServerVersionStr(getServerVersion());
+    serverVersionNum = Utils.parseServerVersionStr(getServerVersion());
+    return serverVersionNum;
   }
 
   public void setServerVersion(String serverVersion) {
@@ -255,16 +286,17 @@ public abstract class QueryExecutorBase implements QueryExecutor {
     this.serverVersionNum = serverVersionNum;
   }
 
-  public synchronized void setTransactionState(TransactionState state) {
+  /* @Holding("lock") */
+  public void setTransactionState(TransactionState state) {
     transactionState = state;
   }
 
-  public synchronized void setStandardConformingStrings(boolean value) {
+  public void setStandardConformingStrings(boolean value) {
     standardConformingStrings = value;
   }
 
   @Override
-  public synchronized boolean getStandardConformingStrings() {
+  public boolean getStandardConformingStrings() {
     return standardConformingStrings;
   }
 
@@ -274,7 +306,7 @@ public abstract class QueryExecutorBase implements QueryExecutor {
   }
 
   @Override
-  public synchronized TransactionState getTransactionState() {
+  public TransactionState getTransactionState() {
     return transactionState;
   }
 
@@ -367,10 +399,17 @@ public abstract class QueryExecutorBase implements QueryExecutor {
     return preferQueryMode;
   }
 
+  @Override
+  public void setPreferQueryMode(PreferQueryMode mode) {
+    preferQueryMode = mode;
+  }
+
+  @Override
   public AutoSave getAutoSave() {
     return autoSave;
   }
 
+  @Override
   public void setAutoSave(AutoSave autoSave) {
     this.autoSave = autoSave;
   }
@@ -418,16 +457,17 @@ public abstract class QueryExecutorBase implements QueryExecutor {
     return flushCacheOnDeallocate;
   }
 
+  @Override
   public void setFlushCacheOnDeallocate(boolean flushCacheOnDeallocate) {
     this.flushCacheOnDeallocate = flushCacheOnDeallocate;
   }
 
   protected boolean hasNotifications() {
-    return notifications.size() > 0;
+    return !notifications.isEmpty();
   }
 
   @Override
-  public final Map<String,String> getParameterStatuses() {
+  public final Map<String, String> getParameterStatuses() {
     return Collections.unmodifiableMap(parameterStatuses);
   }
 
@@ -457,7 +497,7 @@ public abstract class QueryExecutorBase implements QueryExecutor {
    * @see org.postgresql.PGConnection#getParameterStatus
    */
   protected void onParameterStatus(String parameterName, String parameterStatus) {
-    if (parameterName == null || parameterName.equals("")) {
+    if (parameterName == null || "".equals(parameterName)) {
       throw new IllegalStateException("attempt to set GUC_REPORT parameter with null or empty-string name");
     }
 

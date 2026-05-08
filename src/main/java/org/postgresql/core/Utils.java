@@ -7,6 +7,7 @@
 package org.postgresql.core;
 
 import org.postgresql.util.GT;
+import org.postgresql.util.PGbytea;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
 
@@ -27,10 +28,7 @@ public class Utils {
    */
   public static String toHexString(byte[] data) {
     StringBuilder sb = new StringBuilder(data.length * 2);
-    for (byte element : data) {
-      sb.append(Integer.toHexString((element >> 4) & 15));
-      sb.append(Integer.toHexString(element & 15));
-    }
+    PGbytea.appendHexString(sb, data, 0, data.length);
     return sb.toString();
   }
 
@@ -68,7 +66,7 @@ public class Utils {
     try {
       if (standardConformingStrings) {
         // With standard_conforming_strings on, escape only single-quotes.
-        for (int i = 0; i < value.length(); ++i) {
+        for (int i = 0; i < value.length(); i++) {
           char ch = value.charAt(i);
           if (ch == '\0') {
             throw new PSQLException(GT.tr("Zero bytes may not occur in string parameters."),
@@ -85,7 +83,7 @@ public class Utils {
         // avoid a security hazard if the reported value of
         // standard_conforming_strings is incorrect, or an error if
         // backslash_quote is off.
-        for (int i = 0; i < value.length(); ++i) {
+        for (int i = 0; i < value.length(); i++) {
           char ch = value.charAt(i);
           if (ch == '\0') {
             throw new PSQLException(GT.tr("Zero bytes may not occur in string parameters."),
@@ -134,7 +132,7 @@ public class Utils {
     try {
       sbuf.append('"');
 
-      for (int i = 0; i < value.length(); ++i) {
+      for (int i = 0; i < value.length(); i++) {
         char ch = value.charAt(i);
         if (ch == '\0') {
           throw new PSQLException(GT.tr("Zero bytes may not occur in identifiers."),
@@ -154,7 +152,7 @@ public class Utils {
   }
 
   /**
-   * <p>Attempt to parse the server version string into an XXYYZZ form version number.</p>
+   * Attempt to parse the server version string into an XXYYZZ form version number.
    *
    * <p>Returns 0 if the version could not be parsed.</p>
    *
@@ -167,11 +165,9 @@ public class Utils {
    * <p>The yy or zz version parts may be larger than 99. A NumberFormatException is thrown if a
    * version part is out of range.</p>
    *
-   * @param serverVersion server vertion in a XXYYZZ form
+   * @param serverVersion server version in a XXYYZZ form
    * @return server version in number form
-   * @deprecated use specific {@link Version} instance
    */
-  @Deprecated
   public static int parseServerVersionStr(/* @Nullable */ String serverVersion) throws NumberFormatException {
     return ServerVersion.parseServerVersionStr(serverVersion);
   }

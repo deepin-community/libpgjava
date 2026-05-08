@@ -8,12 +8,13 @@ package org.postgresql.ssl;
 import org.postgresql.util.GT;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
+import org.postgresql.util.internal.FileUtils;
 
 // import org.checkerframework.checker.nullness.qual.Nullable;
 
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.net.Socket;
 import java.security.AlgorithmParameters;
@@ -48,13 +49,13 @@ import javax.security.auth.x500.X500Principal;
  * A Key manager that only loads the keys, if necessary.
  */
 public class LazyKeyManager implements X509KeyManager {
-  private X509Certificate /* @Nullable */ [] cert = null;
-  private /* @Nullable */ PrivateKey key = null;
+  private X509Certificate /* @Nullable */ [] cert;
+  private /* @Nullable */ PrivateKey key;
   private final /* @Nullable */ String certfile;
   private final /* @Nullable */ String keyfile;
   private final CallbackHandler cbh;
   private final boolean defaultfile;
-  private /* @Nullable */ PSQLException error = null;
+  private /* @Nullable */ PSQLException error;
 
   /**
    * Constructor. certfile and keyfile can be null, in that case no certificate is presented to the
@@ -73,7 +74,7 @@ public class LazyKeyManager implements X509KeyManager {
   }
 
   /**
-   * getCertificateChain and getPrivateKey cannot throw exeptions, therefore any exception is stored
+   * getCertificateChain and getPrivateKey cannot throw exceptions, therefore any exception is stored
    * in {@link #error} and can be raised by this method.
    *
    * @throws PSQLException if any exception is stored in {@link #error} and can be raised
@@ -102,14 +103,30 @@ public class LazyKeyManager implements X509KeyManager {
         if (certchain == null) {
           return null;
         } else {
-          X500Principal ourissuer = certchain[certchain.length - 1].getIssuerX500Principal();
+          X509Certificate cert = certchain[certchain.length - 1];
+          X500Principal ourissuer = cert.getIssuerX500Principal();
+          String certKeyType = cert.getPublicKey().getAlgorithm();
+          boolean keyTypeFound = false;
           boolean found = false;
-          for (Principal issuer : issuers) {
-            if (ourissuer.equals(issuer)) {
-              found = true;
+          if (keyType != null && keyType.length > 0) {
+            for (String kt : keyType) {
+              if (kt.equalsIgnoreCase(certKeyType)) {
+                keyTypeFound = true;
+              }
+            }
+          } else {
+            // If no key types were passed in, assume we don't care
+            // about checking that the cert uses a particular key type.
+            keyTypeFound = true;
+          }
+          if (keyTypeFound) {
+            for (Principal issuer : issuers) {
+              if (ourissuer.equals(issuer)) {
+                found = keyTypeFound;
+              }
             }
           }
-          return (found ? "user" : null);
+          return found ? "user" : null;
         }
       }
     }
@@ -138,9 +155,9 @@ public class LazyKeyManager implements X509KeyManager {
         return null;
       }
       Collection<? extends Certificate> certs;
-      FileInputStream certfileStream = null;
+      InputStream certfileStream = null;
       try {
-        certfileStream = new FileInputStream(certfile);
+        certfileStream = FileUtils.newBufferedInputStream(certfile);
         certs = cf.generateCertificates(certfileStream);
       } catch (FileNotFoundException ioex) {
         if (!defaultfile) { // It is not an error if there is no file at the default location
@@ -175,7 +192,7 @@ public class LazyKeyManager implements X509KeyManager {
   public String /* @Nullable */ [] getClientAliases(String keyType,
       Principal /* @Nullable */ [] issuers) {
     String alias = chooseClientAlias(new String[]{keyType}, issuers, (Socket) null);
-    return (alias == null ? new String[]{} : new String[]{alias});
+    return alias == null ? new String[]{} : new String[]{alias};
   }
 
   private static byte[] readFileFully(String path) throws IOException {
@@ -253,7 +270,7 @@ public class LazyKeyManager implements X509KeyManager {
             // Extract the iteration count and the salt
             AlgorithmParameters algParams = ePKInfo.getAlgParameters();
             cipher.init(Cipher.DECRYPT_MODE, pbeKey, algParams);
-            // Decrypt the encryped private key into a PKCS8EncodedKeySpec
+            // Decrypt the encrypted private key into a PKCS8EncodedKeySpec
             KeySpec pkcs8KeySpec = ePKInfo.getKeySpec(cipher);
             key = kf.generatePrivate(pkcs8KeySpec);
           } catch (GeneralSecurityException ikex) {

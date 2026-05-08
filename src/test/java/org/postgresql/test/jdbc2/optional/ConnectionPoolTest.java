@@ -5,17 +5,19 @@
 
 package org.postgresql.test.jdbc2.optional;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import org.postgresql.core.ServerVersion;
 import org.postgresql.ds.PGConnectionPoolDataSource;
-import org.postgresql.jdbc2.optional.ConnectionPool;
 import org.postgresql.test.TestUtil;
+import org.postgresql.util.PSQLException;
 
-import org.junit.Assume;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -40,21 +42,22 @@ import javax.sql.PooledConnection;
  * @author Aaron Mulder (ammulder@chariotsolutions.com)
  */
 public class ConnectionPoolTest extends BaseDataSourceTest {
-  private ArrayList<PooledConnection> connections = new ArrayList<PooledConnection>();
+  private final ArrayList<PooledConnection> connections = new ArrayList<>();
 
   /**
    * Creates and configures a ConnectionPool.
    */
   @Override
-  protected void initializeDataSource() {
+  @SuppressWarnings("deprecation")
+  protected void initializeDataSource() throws PSQLException {
     if (bds == null) {
-      bds = new ConnectionPool();
+      bds = new org.postgresql.jdbc2.optional.ConnectionPool();
       setupDataSource(bds);
     }
   }
 
   @Override
-  public void tearDown() throws Exception {
+  public void tearDown() throws SQLException {
     for (PooledConnection c : connections) {
       try {
         c.close();
@@ -123,8 +126,7 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
       String name2 = con.toString();
       con.close();
       pc.close();
-      assertTrue("Physical connection doesn't appear to be reused across PooledConnection wrappers",
-          name.equals(name2));
+      assertEquals(name, name2, "Physical connection doesn't appear to be reused across PooledConnection wrappers");
     } catch (SQLException e) {
       fail(e.getMessage());
     }
@@ -142,8 +144,7 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
       Connection con2 = pc.getConnection();
       try {
         con.createStatement();
-        fail(
-            "Original connection wrapper should be closed when new connection wrapper is generated");
+        fail("Original connection wrapper should be closed when new connection wrapper is generated");
       } catch (SQLException e) {
       }
       con2.close();
@@ -166,9 +167,7 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
       Connection con2 = pc.getConnection();
       con2.close();
       pc.close();
-      assertTrue(
-          "Two calls to PooledConnection.getConnection should not return the same connection wrapper",
-          con != con2);
+      assertNotSame(con, con2, "Two calls to PooledConnection.getConnection should not return the same connection wrapper");
     } catch (SQLException e) {
       fail(e.getMessage());
     }
@@ -278,7 +277,7 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
       assertEquals(0, cc.getErrorCount());
       // Open a 2nd connection, causing the first to be closed. No even should be generated.
       Connection con2 = pc.getConnection();
-      assertTrue("Connection handle was not closed when new handle was opened", con.isClosed());
+      assertTrue(con.isClosed(), "Connection handle was not closed when new handle was opened");
       assertEquals(1, cc.getCount());
       assertEquals(0, cc.getErrorCount());
       con2.close();
@@ -299,13 +298,13 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
     try {
       PooledConnection pc = getPooledConnection();
       con = pc.getConnection();
-      assertTrue(!con.isClosed());
+      assertFalse(con.isClosed());
       con.close();
       assertTrue(con.isClosed());
       con = pc.getConnection();
       Connection con2 = pc.getConnection();
       assertTrue(con.isClosed());
-      assertTrue(!con2.isClosed());
+      assertFalse(con2.isClosed());
       con2.close();
       assertTrue(con.isClosed());
       pc.close();
@@ -323,10 +322,9 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
     try {
       PooledConnection pc = getPooledConnection();
       con = pc.getConnection();
-      assertTrue(!con.isClosed());
+      assertFalse(con.isClosed());
 
-      Assume.assumeTrue("pg_terminate_backend requires PostgreSQL 8.4+",
-          TestUtil.haveMinimumServerVersion(con, ServerVersion.v8_4));
+      assumeTrue(TestUtil.haveMinimumServerVersion(con, ServerVersion.v8_4), "pg_terminate_backend requires PostgreSQL 8.4+");
 
       TestUtil.terminateBackend(con);
       try {
@@ -466,8 +464,8 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
    * sees.
    */
   private class CountClose implements ConnectionEventListener {
-    private int count = 0;
-    private int errorCount = 0;
+    private int count;
+    private int errorCount;
 
     @Override
     public void connectionClosed(ConnectionEvent event) {
@@ -493,8 +491,9 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
   }
 
   @Test
+  @SuppressWarnings("deprecation")
   public void testSerializable() throws IOException, ClassNotFoundException {
-    ConnectionPool pool = new ConnectionPool();
+    org.postgresql.jdbc2.optional.ConnectionPool pool = new org.postgresql.jdbc2.optional.ConnectionPool();
     pool.setDefaultAutoCommit(false);
     pool.setServerName("db.myhost.com");
     pool.setDatabaseName("mydb");
@@ -508,7 +507,7 @@ public class ConnectionPoolTest extends BaseDataSourceTest {
 
     ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
     ObjectInputStream ois = new ObjectInputStream(bais);
-    ConnectionPool pool2 = (ConnectionPool) ois.readObject();
+    org.postgresql.jdbc2.optional.ConnectionPool pool2 = (org.postgresql.jdbc2.optional.ConnectionPool) ois.readObject();
 
     assertEquals(pool.isDefaultAutoCommit(), pool2.isDefaultAutoCommit());
     assertEquals(pool.getServerName(), pool2.getServerName());

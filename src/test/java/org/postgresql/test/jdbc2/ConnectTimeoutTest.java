@@ -5,14 +5,16 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
+import org.postgresql.PGProperty;
 import org.postgresql.test.TestUtil;
 
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.net.NoRouteToHostException;
 import java.net.SocketTimeoutException;
@@ -20,24 +22,24 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
 
-public class ConnectTimeoutTest {
+class ConnectTimeoutTest {
   // The IP below is non-routable (see http://stackoverflow.com/a/904609/1261287)
   private static final String UNREACHABLE_HOST = "10.255.255.1";
   private static final String UNREACHABLE_URL = "jdbc:postgresql://" + UNREACHABLE_HOST + ":5432/test";
   private static final int CONNECT_TIMEOUT = 5;
 
-  @Before
-  public void setUp() throws Exception {
+  @BeforeEach
+  void setUp() throws Exception {
     TestUtil.initDriver();
   }
 
   @Test
-  public void testTimeout() {
+  void timeout() {
     final Properties props = new Properties();
-    props.setProperty("user", "test");
-    props.setProperty("password", "test");
+    PGProperty.USER.set(props, TestUtil.getUser());
+    PGProperty.PASSWORD.set(props, TestUtil.getPassword());
     // with 0 (default value) it hangs for about 60 seconds (platform dependent)
-    props.setProperty("connectTimeout", Integer.toString(CONNECT_TIMEOUT));
+    PGProperty.CONNECT_TIMEOUT.set(props, CONNECT_TIMEOUT);
 
     final long startTime = System.currentTimeMillis();
     try {
@@ -56,16 +58,22 @@ public class ConnectTimeoutTest {
        * We treat this as a skipped test, as the test didn't really "succeed"
        * in testing the original behaviour, but it didn't fail either.
        */
-      Assume.assumeTrue("Host fast-failed connection to unreachable address "
-                        + UNREACHABLE_HOST + " after " + interval + " ms, "
-                        + " before timeout should have triggered.",
-                        e.getCause() instanceof NoRouteToHostException
-                        && interval < connectTimeoutMillis );
+      assumeFalse(
+          e.getCause() instanceof NoRouteToHostException
+              && interval < connectTimeoutMillis,
+          () -> "Host fast-failed connection to unreachable address "
+              + UNREACHABLE_HOST + " after " + interval + " ms, "
+              + " before timeout should have triggered.");
 
-      assertTrue("Unexpected " + e.toString() + " with cause " + e.getCause(),
-          e.getCause() instanceof SocketTimeoutException);
+      assertInstanceOf(
+          SocketTimeoutException.class,
+          e.getCause(),
+          () -> "Unexpected " + e + " with cause " + e.getCause());
       // check that it was not a default system timeout, an approximate value is used
-      assertTrue(Math.abs(interval - connectTimeoutMillis) < maxDeviation);
+      assertTrue(Math.abs(interval - connectTimeoutMillis) < maxDeviation,
+          () -> "Connection timeout should be ~" + connectTimeoutMillis + " ms, but was "
+              + interval + " ms (deviation " + Math.abs(interval - connectTimeoutMillis)
+              + " ms exceeds maximum allowed " + maxDeviation + " ms)");
       return;
     }
     fail("SQLException expected");

@@ -10,9 +10,9 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 
 /**
- * <p>This class helps with URL encoding and decoding. UTF-8 encoding is used by default to make
+ * This class helps with URL encoding and decoding. UTF-8 encoding is used by default to make
  * encoding consistent across the driver, and encoding might be changed via {@code
- * postgresql.url.encoding} property</p>
+ * postgresql.url.encoding} property
  *
  * <p>Note: this should not be used outside of PostgreSQL source, this is not a public API of the
  * driver.</p>
@@ -28,6 +28,7 @@ public final class URLCoder {
    * @return decoded value
    * @see URLDecoder#decode(String, String)
    */
+  @SuppressWarnings("JdkObsolete")
   public static String decode(String encoded) {
     try {
       return URLDecoder.decode(encoded, ENCODING_FOR_URL);
@@ -44,9 +45,10 @@ public final class URLCoder {
    * @return encoded value
    * @see URLEncoder#encode(String, String)
    */
+  @SuppressWarnings("JdkObsolete")
   public static String encode(String plain) {
     try {
-      return URLEncoder.encode(plain, "UTF-8");
+      return URLEncoder.encode(plain, ENCODING_FOR_URL);
     } catch (UnsupportedEncodingException e) {
       throw new IllegalStateException(
           "Unable to encode URL entry via " + ENCODING_FOR_URL + ". This should not happen", e);
