@@ -14,7 +14,7 @@ import org.postgresql.util.PSQLState;
 import java.sql.SQLException;
 
 /**
- * <p>COPY FROM STDIN operation.</p>
+ * COPY FROM STDIN operation.
  *
  * <p>Anticipated flow:
  *
@@ -33,22 +33,27 @@ import java.sql.SQLException;
  * CopyInImpl.getUpdatedRowCount()</p>
  */
 public class CopyInImpl extends CopyOperationImpl implements CopyIn {
+  @Override
   public void writeToCopy(byte[] data, int off, int siz) throws SQLException {
     getQueryExecutor().writeToCopy(this, data, off, siz);
   }
 
+  @Override
   public void writeToCopy(ByteStreamWriter from) throws SQLException {
     getQueryExecutor().writeToCopy(this, from);
   }
 
+  @Override
   public void flushCopy() throws SQLException {
     getQueryExecutor().flushCopy(this);
   }
 
+  @Override
   public long endCopy() throws SQLException {
     return getQueryExecutor().endCopy(this);
   }
 
+  @Override
   protected void handleCopydata(byte[] data) throws PSQLException {
     throw new PSQLException(GT.tr("CopyIn copy direction can't receive data"),
         PSQLState.PROTOCOL_VIOLATION);

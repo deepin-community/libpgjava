@@ -26,6 +26,7 @@ public final class EscapedFunctions2 {
   // constants for timestampadd and timestampdiff
   private static final String SQL_TSI_ROOT = "SQL_TSI_";
   private static final String SQL_TSI_DAY = "SQL_TSI_DAY";
+  @SuppressWarnings("unused")
   private static final String SQL_TSI_FRAC_SECOND = "SQL_TSI_FRAC_SECOND";
   private static final String SQL_TSI_HOUR = "SQL_TSI_HOUR";
   private static final String SQL_TSI_MINUTE = "SQL_TSI_MINUTE";
@@ -42,7 +43,7 @@ public final class EscapedFunctions2 {
 
   private static ConcurrentMap<String, Method> createFunctionMap(String prefix) {
     Method[] methods = EscapedFunctions2.class.getMethods();
-    ConcurrentMap<String, Method> functionMap = new ConcurrentHashMap<String, Method>(methods.length * 2);
+    ConcurrentMap<String, Method> functionMap = new ConcurrentHashMap<>(methods.length * 2);
     for (Method method : methods) {
       if (method.getName().startsWith(prefix)) {
         functionMap.put(method.getName().substring(prefix.length()).toLowerCase(Locale.US), method);
@@ -574,7 +575,7 @@ public final class EscapedFunctions2 {
           PSQLState.SYNTAX_ERROR);
     }
     buf.append("extract( ")
-        .append(constantToDatePart(buf, parsedArgs.get(0).toString()))
+        .append(constantToDatePart(parsedArgs.get(0).toString()))
         .append(" from (")
         .append(parsedArgs.get(2))
         .append("-")
@@ -582,7 +583,7 @@ public final class EscapedFunctions2 {
         .append("))");
   }
 
-  private static String constantToDatePart(StringBuilder buf, String type) throws SQLException {
+  private static String constantToDatePart(String type) throws SQLException {
     if (!isTsi(type)) {
       throw new PSQLException(GT.tr("Interval {0} not yet implemented", type),
           PSQLState.SYNTAX_ERROR);
@@ -682,7 +683,7 @@ public final class EscapedFunctions2 {
       String end, List<? extends CharSequence> args) {
     int size = begin.length();
     // Typically just-in-time compiler would eliminate Iterator in case foreach is used,
-    // however the code below uses indexed iteration to keep the conde independent from
+    // however the code below uses indexed iteration to keep the code independent from
     // various JIT implementations (== avoid Iterator allocations even for not-so-smart JITs)
     // see https://bugs.openjdk.java.net/browse/JDK-8166840
     // see http://2016.jpoint.ru/talks/cheremin/ (video and slides)

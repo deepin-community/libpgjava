@@ -5,93 +5,105 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.postgresql.test.TestUtil;
 
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.sql.Array;
 import java.sql.CallableStatement;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.sql.Types;
 
-/*
+/**
  * CallableStatement tests.
  *
  * @author Paul Bethe
  */
 public class CallableStmtTest extends BaseTest4 {
+  @BeforeAll
+  public static void beforeClass() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      assumeCallableStatementsSupported(con);
+      TestUtil.createTable(con, "int_table", "id int");
+      try (Statement stmt = con.createStatement()) {
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__getString (varchar) "
+                + "RETURNS varchar AS ' DECLARE inString alias for $1; begin "
+                + "return ''bob''; end; ' LANGUAGE plpgsql;");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__getDouble (float) "
+                + "RETURNS float AS ' DECLARE inString alias for $1; begin "
+                + "return 42.42; end; ' LANGUAGE plpgsql;");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__getVoid (float) "
+                + "RETURNS void AS ' DECLARE inString alias for $1; begin "
+                + " return; end; ' LANGUAGE plpgsql;");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__getInt (int) RETURNS int "
+                + " AS 'DECLARE inString alias for $1; begin "
+                + "return 42; end;' LANGUAGE plpgsql;");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__getShort (int2) RETURNS int2 "
+                + " AS 'DECLARE inString alias for $1; begin "
+                + "return 42; end;' LANGUAGE plpgsql;");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__getNumeric (numeric) "
+                + "RETURNS numeric AS ' DECLARE inString alias for $1; "
+                + "begin return 42; end; ' LANGUAGE plpgsql;");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__getNumericWithoutArg() "
+                + "RETURNS numeric AS '  "
+                + "begin return 42; end; ' LANGUAGE plpgsql;");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__getarray() RETURNS int[] as "
+                + "'SELECT ''{1,2}''::int[];' LANGUAGE sql");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__raisenotice() RETURNS int as "
+                + "'BEGIN RAISE NOTICE ''hello'';  RAISE NOTICE ''goodbye''; RETURN 1; END;' LANGUAGE plpgsql");
+        stmt.execute(
+            "CREATE OR REPLACE FUNCTION testspg__insertInt(int) RETURNS int as "
+                + "'BEGIN INSERT INTO int_table(id) VALUES ($1); RETURN 1; END;' LANGUAGE plpgsql");
+      }
+    }
+  }
+
+  @AfterAll
+  public static void afterClass() throws Exception {
+    try (Connection con = TestUtil.openDB();
+         Statement stmt = con.createStatement()) {
+      stmt.execute("drop FUNCTION IF EXISTS testspg__getString (varchar);");
+      stmt.execute("drop FUNCTION IF EXISTS testspg__getDouble (float);");
+      stmt.execute("drop FUNCTION IF EXISTS testspg__getVoid(float);");
+      stmt.execute("drop FUNCTION IF EXISTS testspg__getInt (int);");
+      stmt.execute("drop FUNCTION IF EXISTS testspg__getShort(int2)");
+      stmt.execute("drop FUNCTION IF EXISTS testspg__getNumeric (numeric);");
+      stmt.execute("drop FUNCTION IF EXISTS testspg__getNumericWithoutArg ();");
+      stmt.execute("DROP FUNCTION IF EXISTS testspg__getarray();");
+      stmt.execute("DROP FUNCTION IF EXISTS testspg__raisenotice();");
+      stmt.execute("DROP FUNCTION IF EXISTS testspg__insertInt(int);");
+      TestUtil.dropTable(con, "int_table");
+    }
+  }
 
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    TestUtil.createTable(con, "int_table", "id int");
-    Statement stmt = con.createStatement();
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__getString (varchar) "
-        + "RETURNS varchar AS ' DECLARE inString alias for $1; begin "
-        + "return ''bob''; end; ' LANGUAGE plpgsql;");
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__getDouble (float) "
-        + "RETURNS float AS ' DECLARE inString alias for $1; begin "
-        + "return 42.42; end; ' LANGUAGE plpgsql;");
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__getVoid (float) "
-        + "RETURNS void AS ' DECLARE inString alias for $1; begin "
-        + " return; end; ' LANGUAGE plpgsql;");
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__getInt (int) RETURNS int "
-        + " AS 'DECLARE inString alias for $1; begin "
-        + "return 42; end;' LANGUAGE plpgsql;");
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__getShort (int2) RETURNS int2 "
-        + " AS 'DECLARE inString alias for $1; begin "
-        + "return 42; end;' LANGUAGE plpgsql;");
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__getNumeric (numeric) "
-        + "RETURNS numeric AS ' DECLARE inString alias for $1; "
-        + "begin return 42; end; ' LANGUAGE plpgsql;");
-
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__getNumericWithoutArg() "
-        + "RETURNS numeric AS '  "
-        + "begin return 42; end; ' LANGUAGE plpgsql;");
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__getarray() RETURNS int[] as "
-        + "'SELECT ''{1,2}''::int[];' LANGUAGE sql");
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__raisenotice() RETURNS int as "
-        + "'BEGIN RAISE NOTICE ''hello'';  RAISE NOTICE ''goodbye''; RETURN 1; END;' LANGUAGE plpgsql");
-    stmt.execute(
-        "CREATE OR REPLACE FUNCTION testspg__insertInt(int) RETURNS int as "
-        + "'BEGIN INSERT INTO int_table(id) VALUES ($1); RETURN 1; END;' LANGUAGE plpgsql");
-    stmt.close();
-  }
-
-  @Override
-  public void tearDown() throws SQLException {
-    Statement stmt = con.createStatement();
-    TestUtil.dropTable(con, "int_table");
-    stmt.execute("drop FUNCTION testspg__getString (varchar);");
-    stmt.execute("drop FUNCTION testspg__getDouble (float);");
-    stmt.execute("drop FUNCTION testspg__getVoid(float);");
-    stmt.execute("drop FUNCTION testspg__getInt (int);");
-    stmt.execute("drop FUNCTION testspg__getShort(int2)");
-    stmt.execute("drop FUNCTION testspg__getNumeric (numeric);");
-
-    stmt.execute("drop FUNCTION testspg__getNumericWithoutArg ();");
-    stmt.execute("DROP FUNCTION testspg__getarray();");
-    stmt.execute("DROP FUNCTION testspg__raisenotice();");
-    stmt.execute("DROP FUNCTION testspg__insertInt(int);");
-    super.tearDown();
+    TestUtil.execute(con, "TRUNCATE int_table");
   }
 
   final String func = "{ ? = call ";
@@ -99,7 +111,6 @@ public class CallableStmtTest extends BaseTest4 {
 
   @Test
   public void testGetUpdateCount() throws SQLException {
-    assumeCallableStatementsSupported();
     CallableStatement call = con.prepareCall(func + pkgName + "getDouble (?) }");
     call.setDouble(2, 3.04);
     call.registerOutParameter(1, Types.DOUBLE);
@@ -118,17 +129,16 @@ public class CallableStmtTest extends BaseTest4 {
     assertNotNull(rs);
     assertTrue(rs.next());
     assertEquals(42.42, rs.getDouble(1), 0.00001);
-    assertTrue(!rs.next());
+    assertFalse(rs.next());
     rs.close();
 
     assertEquals(-1, call.getUpdateCount());
-    assertTrue(!call.getMoreResults());
+    assertFalse(call.getMoreResults());
     call.close();
   }
 
   @Test
   public void testGetDouble() throws Throwable {
-    assumeCallableStatementsSupported();
     CallableStatement call = con.prepareCall(func + pkgName + "getDouble (?) }");
     call.setDouble(2, 3.04);
     call.registerOutParameter(1, Types.DOUBLE);
@@ -147,7 +157,6 @@ public class CallableStmtTest extends BaseTest4 {
 
   @Test
   public void testGetInt() throws Throwable {
-    assumeCallableStatementsSupported();
     CallableStatement call = con.prepareCall(func + pkgName + "getInt (?) }");
     call.setInt(2, 4);
     call.registerOutParameter(1, Types.INTEGER);
@@ -157,7 +166,6 @@ public class CallableStmtTest extends BaseTest4 {
 
   @Test
   public void testGetShort() throws Throwable {
-    assumeCallableStatementsSupported();
     CallableStatement call = con.prepareCall(func + pkgName + "getShort (?) }");
     call.setShort(2, (short) 4);
     call.registerOutParameter(1, Types.SMALLINT);
@@ -167,26 +175,23 @@ public class CallableStmtTest extends BaseTest4 {
 
   @Test
   public void testGetNumeric() throws Throwable {
-    assumeCallableStatementsSupported();
     CallableStatement call = con.prepareCall(func + pkgName + "getNumeric (?) }");
     call.setBigDecimal(2, new java.math.BigDecimal(4));
     call.registerOutParameter(1, Types.NUMERIC);
     call.execute();
-    assertEquals(new java.math.BigDecimal(42), call.getBigDecimal(1));
+    assertEquals(new BigDecimal(42), call.getBigDecimal(1));
   }
 
   @Test
   public void testGetNumericWithoutArg() throws Throwable {
-    assumeCallableStatementsSupported();
     CallableStatement call = con.prepareCall(func + pkgName + "getNumericWithoutArg () }");
     call.registerOutParameter(1, Types.NUMERIC);
     call.execute();
-    assertEquals(new java.math.BigDecimal(42), call.getBigDecimal(1));
+    assertEquals(new BigDecimal(42), call.getBigDecimal(1));
   }
 
   @Test
   public void testGetString() throws Throwable {
-    assumeCallableStatementsSupported();
     CallableStatement call = con.prepareCall(func + pkgName + "getString (?) }");
     call.setString(2, "foo");
     call.registerOutParameter(1, Types.VARCHAR);
@@ -197,7 +202,6 @@ public class CallableStmtTest extends BaseTest4 {
 
   @Test
   public void testGetArray() throws SQLException {
-    assumeCallableStatementsSupported();
     CallableStatement call = con.prepareCall(func + pkgName + "getarray()}");
     call.registerOutParameter(1, Types.ARRAY);
     call.execute();
@@ -207,12 +211,11 @@ public class CallableStmtTest extends BaseTest4 {
     assertEquals(1, rs.getInt(1));
     assertTrue(rs.next());
     assertEquals(2, rs.getInt(1));
-    assertTrue(!rs.next());
+    assertFalse(rs.next());
   }
 
   @Test
   public void testRaiseNotice() throws SQLException {
-    assumeCallableStatementsSupported();
     Statement statement = con.createStatement();
     statement.execute("SET SESSION client_min_messages = 'NOTICE'");
     CallableStatement call = con.prepareCall(func + pkgName + "raisenotice()}");
@@ -236,7 +239,7 @@ public class CallableStmtTest extends BaseTest4 {
       cs.wasNull();
       fail("expected exception");
     } catch (Exception e) {
-      assertTrue(e instanceof SQLException);
+      assertInstanceOf(SQLException.class, e);
     }
   }
 
@@ -249,7 +252,7 @@ public class CallableStmtTest extends BaseTest4 {
       cs.getString(1);
       fail("expected exception");
     } catch (Exception e) {
-      assertTrue(e instanceof SQLException);
+      assertInstanceOf(SQLException.class, e);
     }
   }
 
@@ -261,7 +264,7 @@ public class CallableStmtTest extends BaseTest4 {
       cs.getObject(1);
       fail("expected exception");
     } catch (Exception e) {
-      assertTrue(e instanceof SQLException);
+      assertInstanceOf(SQLException.class, e);
     }
   }
 
@@ -301,7 +304,7 @@ public class CallableStmtTest extends BaseTest4 {
     assertEquals(2, rs.getInt(1));
     assertTrue(rs.next());
     assertEquals(3, rs.getInt(1));
-    assertTrue(!rs.next());
+    assertFalse(rs.next());
   }
 
 }

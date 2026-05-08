@@ -5,22 +5,24 @@
 
 package org.postgresql.test.jdbc2.optional;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.postgresql.core.BaseConnection;
 import org.postgresql.ds.common.BaseDataSource;
-import org.postgresql.jdbc2.optional.SimpleDataSource;
 import org.postgresql.test.TestUtil;
+import org.postgresql.util.PSQLException;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.sql.Statement;
 
 /**
  * DataSource test to ensure the BaseConnection is configured with column sanitiser disabled.
@@ -29,28 +31,35 @@ public class CaseOptimiserDataSourceTest {
   private BaseDataSource bds;
   protected Connection conn;
 
-  @Before
-  public void setUp() throws SQLException {
-    Connection conn = getDataSourceConnection();
-    assertTrue(conn instanceof BaseConnection);
-    BaseConnection bc = (BaseConnection) conn;
-    assertTrue("Expected state [TRUE] of base connection configuration failed test.",
-        bc.isColumnSanitiserDisabled());
-    Statement insert = conn.createStatement();
-    TestUtil.createTable(conn, "allmixedup",
-        "id int primary key, \"DESCRIPTION\" varchar(40), \"fOo\" varchar(3)");
-    insert.execute(TestUtil.insertSQL("allmixedup", "1,'mixed case test', 'bar'"));
-    insert.close();
-    conn.close();
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection conn = TestUtil.openDB()) {
+      TestUtil.createTable(conn, "allmixedup",
+          "id int primary key, \"DESCRIPTION\" varchar(40), \"fOo\" varchar(3)");
+    }
   }
 
-  @After
-  public void tearDown() throws SQLException {
-    Connection conn = getDataSourceConnection();
-    Statement drop = conn.createStatement();
-    drop.execute("drop table allmixedup");
-    drop.close();
-    conn.close();
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection conn = TestUtil.openDB()) {
+      TestUtil.dropTable(conn, "allmixedup");
+    }
+  }
+
+  @BeforeEach
+  void setUp() throws SQLException {
+    try (Connection conn = getDataSourceConnection()) {
+      assertInstanceOf(BaseConnection.class, conn);
+      BaseConnection bc = (BaseConnection) conn;
+      assertTrue(bc.isColumnSanitiserDisabled(),
+          "Expected state [TRUE] of base connection configuration failed test.");
+      TestUtil.execute(conn, "TRUNCATE allmixedup CASCADE");
+      TestUtil.execute(conn, TestUtil.insertSQL("allmixedup", "1,'mixed case test', 'bar'"));
+    }
+  }
+
+  @AfterEach
+  void tearDown() throws SQLException {
     bds.setDisableColumnSanitiser(false);
   }
 
@@ -60,7 +69,7 @@ public class CaseOptimiserDataSourceTest {
    * found.
    */
   @Test
-  public void testDataSourceDisabledSanitiserPropertySucceeds() throws SQLException {
+  void dataSourceDisabledSanitiserPropertySucceeds() throws SQLException {
     String label = "FOO";
     Connection conn = getDataSourceConnection();
     PreparedStatement query =
@@ -82,23 +91,23 @@ public class CaseOptimiserDataSourceTest {
     return bds.getConnection();
   }
 
-  protected void initializeDataSource() {
+  @SuppressWarnings("deprecation")
+  protected void initializeDataSource() throws PSQLException {
     if (bds == null) {
-      bds = new SimpleDataSource();
+      bds = new org.postgresql.jdbc2.optional.SimpleDataSource();
       setupDataSource(bds);
       bds.setDisableColumnSanitiser(true);
     }
   }
 
-  public static void setupDataSource(BaseDataSource bds) {
+  @SuppressWarnings("deprecation")
+  public static void setupDataSource(BaseDataSource bds) throws PSQLException {
     bds.setServerName(TestUtil.getServer());
     bds.setPortNumber(TestUtil.getPort());
     bds.setDatabaseName(TestUtil.getDatabase());
     bds.setUser(TestUtil.getUser());
     bds.setPassword(TestUtil.getPassword());
     bds.setPrepareThreshold(TestUtil.getPrepareThreshold());
-    bds.setLoggerLevel(TestUtil.getLogLevel());
-    bds.setLoggerFile(TestUtil.getLogFile());
     bds.setProtocolVersion(TestUtil.getProtocolVersion());
   }
 }

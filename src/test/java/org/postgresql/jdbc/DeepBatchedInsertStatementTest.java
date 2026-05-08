@@ -5,7 +5,7 @@
 
 package org.postgresql.jdbc;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.postgresql.PGProperty;
 import org.postgresql.core.ParameterList;
@@ -15,12 +15,14 @@ import org.postgresql.test.TestUtil;
 import org.postgresql.test.jdbc2.BaseTest4;
 import org.postgresql.test.jdbc2.BatchExecuteTest;
 
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.sql.Connection;
 import java.sql.Date;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Properties;
 
@@ -31,6 +33,22 @@ import java.util.Properties;
  */
 public class DeepBatchedInsertStatementTest extends BaseTest4 {
 
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.createTable(con, "testbatch", "pk INTEGER, col1 INTEGER");
+      TestUtil.createTable(con, "testunspecified", "pk INTEGER, bday TIMESTAMP");
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.dropTable(con, "testbatch");
+      TestUtil.dropTable(con, "testunspecified");
+    }
+  }
+
   /*
    * Set up the fixture for this testcase: a connection to a database with a
    * table for this test.
@@ -38,31 +56,14 @@ public class DeepBatchedInsertStatementTest extends BaseTest4 {
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    Statement stmt = con.createStatement();
-
-    /*
-     * Drop the test table if it already exists for some reason. It is not an
-     * error if it doesn't exist.
-     */
-    TestUtil.createTable(con, "testbatch", "pk INTEGER, col1 INTEGER");
-    TestUtil.createTable(con, "testunspecified", "pk INTEGER, bday TIMESTAMP");
-
-    stmt.executeUpdate("INSERT INTO testbatch VALUES (1, 0)");
-    stmt.close();
-
+    TestUtil.execute(con, "TRUNCATE testbatch");
+    TestUtil.execute(con, "TRUNCATE testunspecified");
+    TestUtil.execute(con, "INSERT INTO testbatch VALUES (1, 0)");
     /*
      * Generally recommended with batch updates. By default we run all tests in
      * this test case with autoCommit disabled.
      */
     con.setAutoCommit(false);
-  }
-
-  // Tear down the fixture for this test case.
-  @Override
-  public void tearDown() throws SQLException {
-    TestUtil.dropTable(con, "testbatch");
-    TestUtil.dropTable(con, "testunspecified");
-    super.tearDown();
   }
 
   @Override
@@ -242,7 +243,7 @@ public class DeepBatchedInsertStatementTest extends BaseTest4 {
   public void testVaryingTypeCounts() throws SQLException {
     PgPreparedStatement pstmt = null;
     try {
-      pstmt = (PgPreparedStatement)con.prepareStatement("INSERT INTO testunspecified VALUES (?,?)");
+      pstmt = (PgPreparedStatement) con.prepareStatement("INSERT INTO testunspecified VALUES (?,?)");
       pstmt.setInt(1, 1);
       pstmt.setDate(2, new Date(1));
       pstmt.addBatch();
@@ -275,7 +276,7 @@ public class DeepBatchedInsertStatementTest extends BaseTest4 {
    * @return BatchedQueryDecorator[] queries after conversion
    * @throws Exception fault raised when the field cannot be accessed
    */
-  private BatchedQuery[] transformBQD(PgPreparedStatement ps) throws Exception {
+  private static BatchedQuery[] transformBQD(PgPreparedStatement ps) throws Exception {
     // We store collections that get replace on the statement
     ArrayList<Query> batchStatements = ps.batchStatements;
     ArrayList<ParameterList> batchParameters = ps.batchParameters;
@@ -293,7 +294,7 @@ public class DeepBatchedInsertStatementTest extends BaseTest4 {
    * @param bqds the converted queries
    * @return the total batch size
    */
-  private int getBatchSize(BatchedQuery[] bqds) {
+  private static int getBatchSize(BatchedQuery[] bqds) {
     int total = 0;
     for (BatchedQuery bqd : bqds) {
       total += bqd.getBatchSize();
@@ -309,7 +310,7 @@ public class DeepBatchedInsertStatementTest extends BaseTest4 {
    *     when encoded
    * @throws Exception fault raised if access to field not possible
    */
-  private byte[] getEncodedStatementName(BatchedQuery bqd)
+  private static byte[] getEncodedStatementName(BatchedQuery bqd)
       throws Exception {
     Class<?> clazz = Class.forName("org.postgresql.core.v3.SimpleQuery");
     Method mESN = clazz.getDeclaredMethod("getEncodedStatementName");

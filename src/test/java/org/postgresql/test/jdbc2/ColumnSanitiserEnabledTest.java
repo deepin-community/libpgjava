@@ -5,47 +5,60 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.postgresql.core.BaseConnection;
 import org.postgresql.test.TestUtil;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.Properties;
 
 /*
- * This test suite will check the behaviour of the findColumnIndex method. The tests will check the
- * behaviour of the method when the sanitiser is enabled. Default behaviour of the driver.
- */
-public class ColumnSanitiserEnabledTest {
+* This test suite will check the behaviour of the findColumnIndex method. The tests will check the
+* behaviour of the method when the sanitiser is enabled. Default behaviour of the driver.
+*/
+class ColumnSanitiserEnabledTest {
   private Connection conn;
 
-  @Before
-  public void setUp() throws Exception {
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection conn = TestUtil.openDB()) {
+      TestUtil.createTable(conn, "allmixedup",
+          "id int primary key, \"DESCRIPTION\" varchar(40), \"fOo\" varchar(3)");
+      TestUtil.execute(conn, TestUtil.insertSQL("allmixedup", "1,'mixed case test', 'bar'"));
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection conn = TestUtil.openDB()) {
+      TestUtil.dropTable(conn, "allmixedup");
+    }
+  }
+
+  @BeforeEach
+  void setUp() throws Exception {
     Properties props = new Properties();
     props.setProperty("disableColumnSanitiser", Boolean.FALSE.toString());
     conn = TestUtil.openDB(props);
     assertTrue(conn instanceof BaseConnection);
     BaseConnection bc = (BaseConnection) conn;
-    assertFalse("Expected state [FALSE] of base connection configuration failed test.",
-        bc.isColumnSanitiserDisabled());
-    TestUtil.createTable(conn, "allmixedup",
-        "id int primary key, \"DESCRIPTION\" varchar(40), \"fOo\" varchar(3)");
-    Statement data = conn.createStatement();
-    data.execute(TestUtil.insertSQL("allmixedup", "1,'mixed case test', 'bar'"));
-    data.close();
+    assertFalse(bc.isColumnSanitiserDisabled(),
+        "Expected state [FALSE] of base connection configuration failed test.");
   }
 
-  protected void tearDown() throws Exception {
-    TestUtil.dropTable(conn, "allmixedup");
+  @AfterEach
+  void tearDown() throws Exception {
     TestUtil.closeDB(conn);
   }
 
@@ -55,47 +68,47 @@ public class ColumnSanitiserEnabledTest {
    */
 
   @Test
-  public void testTableColumnLowerNowFindFindLowerCaseColumn() throws SQLException {
+  void tableColumnLowerNowFindFindLowerCaseColumn() throws SQLException {
     findColumn("id", true);
   }
 
   @Test
-  public void testTableColumnLowerNowFindFindUpperCaseColumn() throws SQLException {
+  void tableColumnLowerNowFindFindUpperCaseColumn() throws SQLException {
     findColumn("ID", true);
   }
 
   @Test
-  public void testTableColumnLowerNowFindFindMixedCaseColumn() throws SQLException {
+  void tableColumnLowerNowFindFindMixedCaseColumn() throws SQLException {
     findColumn("Id", true);
   }
 
   @Test
-  public void testTableColumnUpperNowFindFindLowerCaseColumn() throws SQLException {
+  void tableColumnUpperNowFindFindLowerCaseColumn() throws SQLException {
     findColumn("description", true);
   }
 
   @Test
-  public void testTableColumnUpperNowFindFindUpperCaseColumn() throws SQLException {
+  void tableColumnUpperNowFindFindUpperCaseColumn() throws SQLException {
     findColumn("DESCRIPTION", true);
   }
 
   @Test
-  public void testTableColumnUpperNowFindFindMixedCaseColumn() throws SQLException {
+  void tableColumnUpperNowFindFindMixedCaseColumn() throws SQLException {
     findColumn("Description", true);
   }
 
   @Test
-  public void testTableColumnMixedNowFindLowerCaseColumn() throws SQLException {
+  void tableColumnMixedNowFindLowerCaseColumn() throws SQLException {
     findColumn("foo", true);
   }
 
   @Test
-  public void testTableColumnMixedNowFindFindUpperCaseColumn() throws SQLException {
+  void tableColumnMixedNowFindFindUpperCaseColumn() throws SQLException {
     findColumn("FOO", true);
   }
 
   @Test
-  public void testTableColumnMixedNowFindFindMixedCaseColumn() throws SQLException {
+  void tableColumnMixedNowFindFindMixedCaseColumn() throws SQLException {
     findColumn("fOo", true);
   }
 

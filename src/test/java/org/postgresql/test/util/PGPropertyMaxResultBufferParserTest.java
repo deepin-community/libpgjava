@@ -5,38 +5,28 @@
 
 package org.postgresql.test.util;
 
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import org.postgresql.test.annotations.DisableLogger;
 import org.postgresql.util.PGPropertyMaxResultBufferParser;
 import org.postgresql.util.PSQLException;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.lang.management.ManagementFactory;
 import java.util.Arrays;
 import java.util.Collection;
 
-@RunWith(Parameterized.class)
 public class PGPropertyMaxResultBufferParserTest {
-
-  @Parameterized.Parameter(0)
-  public String valueToParse;
-
-  @Parameterized.Parameter(1)
-  public long expectedResult;
-
-  @Parameterized.Parameters(name = "{index}: Test with valueToParse={0}, expectedResult={1}")
   public static Collection<Object[]> data() {
     Object[][] data = new Object[][]{
       {"100", 100L},
       {"10K", 10L * 1000},
       {"25M", 25L * 1000 * 1000},
-      //next two should be too big
-      {"35G", (long) (0.90 * ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getMax())},
-      {"1T", (long) (0.90 * ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getMax())},
       //percent test
       {"5p", (long) (0.05 * ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getMax())},
       {"10pct", (long) (0.10 * ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getMax())},
@@ -49,21 +39,38 @@ public class PGPropertyMaxResultBufferParserTest {
     return Arrays.asList(data);
   }
 
-  @Test
-  public void testGetMaxResultBufferValue() {
-    try {
+  public static Collection<Object[]> largeData() {
+    Object[][] data = new Object[][]{
+      //next two should be too big
+      {"35G", (long) (0.90 * ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getMax())},
+      {"1T", (long) (0.90 * ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getMax())},
+    };
+    return Arrays.asList(data);
+  }
+
+  @MethodSource("data")
+  @ParameterizedTest
+  void getMaxResultBufferValue(String valueToParse, long expectedResult) {
+    assertDoesNotThrow(() -> {
       long result = PGPropertyMaxResultBufferParser.parseProperty(valueToParse);
-      Assert.assertEquals(expectedResult, result);
-    } catch (PSQLException e) {
-      //shouldn't occur
-      fail();
-    }
+      assertEquals(expectedResult, result);
+    });
   }
 
-  @Test(expected = PSQLException.class)
-  public void testGetMaxResultBufferValueException() throws PSQLException {
-    long result = PGPropertyMaxResultBufferParser.parseProperty("abc");
-    fail();
+  @MethodSource("largeData")
+  @ParameterizedTest
+  @DisableLogger(PGPropertyMaxResultBufferParser.class)
+  void getMaxResultBufferValueLargeBuffers(String valueToParse, long expectedResult) {
+    assertDoesNotThrow(() -> {
+      long result = PGPropertyMaxResultBufferParser.parseProperty(valueToParse);
+      assertEquals(expectedResult, result);
+    });
   }
 
+  @Test
+  void getMaxResultBufferValueException() throws PSQLException {
+    assertThrows(PSQLException.class, () -> {
+      long ignore = PGPropertyMaxResultBufferParser.parseProperty("abc");
+    });
+  }
 }

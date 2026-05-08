@@ -5,12 +5,15 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.postgresql.test.TestUtil;
 
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -20,10 +23,24 @@ import java.sql.SQLException;
  */
 public class ServerCursorTest extends BaseTest4 {
 
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.createTable(con, "test_fetch", "value integer,data bytea");
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.dropTable(con, "test_fetch");
+    }
+  }
+
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    TestUtil.createTable(con, "test_fetch", "value integer,data bytea");
+    TestUtil.execute(con, "TRUNCATE test_fetch");
     con.setAutoCommit(false);
   }
 
@@ -31,13 +48,12 @@ public class ServerCursorTest extends BaseTest4 {
   public void tearDown() throws SQLException {
     con.rollback();
     con.setAutoCommit(true);
-    TestUtil.dropTable(con, "test_fetch");
     super.tearDown();
   }
 
   protected void createRows(int count) throws Exception {
     PreparedStatement stmt = con.prepareStatement("insert into test_fetch(value,data) values(?,?)");
-    for (int i = 0; i < count; ++i) {
+    for (int i = 0; i < count; i++) {
       stmt.setInt(1, i + 1);
       stmt.setBytes(2, DATA_STRING.getBytes("UTF8"));
       stmt.executeUpdate();
@@ -48,7 +64,6 @@ public class ServerCursorTest extends BaseTest4 {
   // Test regular cursor fetching
   @Test
   public void testBasicFetch() throws Exception {
-    assumeByteaSupported();
     createRows(1);
 
     PreparedStatement stmt =
@@ -59,17 +74,15 @@ public class ServerCursorTest extends BaseTest4 {
     ResultSet rs = stmt.executeQuery();
     while (rs.next()) {
       // there should only be one row returned
-      assertEquals("query value error", 1, rs.getInt(1));
+      assertEquals(1, rs.getInt(1), "query value error");
       byte[] dataBytes = rs.getBytes(2);
-      assertEquals("binary data got munged", DATA_STRING, new String(dataBytes, "UTF8"));
+      assertEquals(DATA_STRING, new String(dataBytes, "UTF8"), "binary data got munged");
     }
-
   }
 
   // Test binary cursor fetching
   @Test
   public void testBinaryFetch() throws Exception {
-    assumeByteaSupported();
     createRows(1);
 
     PreparedStatement stmt =
@@ -81,9 +94,8 @@ public class ServerCursorTest extends BaseTest4 {
     while (rs.next()) {
       // there should only be one row returned
       byte[] dataBytes = rs.getBytes(2);
-      assertEquals("binary data got munged", DATA_STRING, new String(dataBytes, "UTF8"));
+      assertEquals(DATA_STRING, new String(dataBytes, "UTF8"), "binary data got munged");
     }
-
   }
 
   //CHECKSTYLE: OFF

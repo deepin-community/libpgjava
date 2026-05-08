@@ -8,6 +8,7 @@ package org.postgresql.ds;
 import static org.postgresql.util.internal.Nullness.castNonNull;
 
 import org.postgresql.PGConnection;
+import org.postgresql.PGStatement;
 import org.postgresql.util.GT;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
@@ -23,7 +24,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.LinkedList;
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.sql.ConnectionEvent;
@@ -40,7 +41,7 @@ import javax.sql.StatementEventListener;
  * @see org.postgresql.ds.PGConnectionPoolDataSource
  */
 public class PGPooledConnection implements PooledConnection {
-  private final List<ConnectionEventListener> listeners = new LinkedList<ConnectionEventListener>();
+  private final List<ConnectionEventListener> listeners = new ArrayList<>();
   private /* @Nullable */ Connection con;
   private /* @Nullable */ ConnectionHandler last;
   private final boolean autoCommit;
@@ -85,6 +86,8 @@ public class PGPooledConnection implements PooledConnection {
    */
   @Override
   public void close() throws SQLException {
+    Connection con = this.con;
+    ConnectionHandler last = this.last;
     if (last != null) {
       last.close();
       if (con != null && !con.isClosed()) {
@@ -92,6 +95,7 @@ public class PGPooledConnection implements PooledConnection {
           try {
             con.rollback();
           } catch (SQLException ignored) {
+            // TODO: should we rethrow it?
           }
         }
       }
@@ -102,14 +106,14 @@ public class PGPooledConnection implements PooledConnection {
     try {
       con.close();
     } finally {
-      con = null;
+      this.con = null;
     }
   }
 
   /**
    * Gets a handle for a client to use. This is a wrapper around the physical connection, so the
    * client can call close and it will just return the connection to the pool without really closing
-   * the pgysical connection.
+   * the physical connection.
    *
    * <p>
    * According to the JDBC 2.0 Optional Package spec (6.2.3), only one client may have an active
@@ -119,6 +123,7 @@ public class PGPooledConnection implements PooledConnection {
    */
   @Override
   public Connection getConnection() throws SQLException {
+    Connection con = this.con;
     if (con == null) {
       // Before throwing the exception, let's notify the registered listeners about the error
       PSQLException sqlException =
@@ -133,6 +138,7 @@ public class PGPooledConnection implements PooledConnection {
     try {
       // Only one connection can be open at a time from this PooledConnection. See JDBC 2.0 Optional
       // Package spec section 6.2.3
+      ConnectionHandler last = this.last;
       if (last != null) {
         last.close();
         if (con != null) {
@@ -140,6 +146,7 @@ public class PGPooledConnection implements PooledConnection {
             try {
               con.rollback();
             } catch (SQLException ignored) {
+              // TODO: should we rethrow it?
             }
           }
           con.clearWarnings();
@@ -259,7 +266,7 @@ public class PGPooledConnection implements PooledConnection {
   private class ConnectionHandler implements InvocationHandler {
     private /* @Nullable */ Connection con;
     private /* @Nullable */ Connection proxy; // the Connection the client is currently using, which is a proxy
-    private boolean automatic = false;
+    private boolean automatic;
 
     ConnectionHandler(Connection con) {
       this.con = con;
@@ -271,13 +278,13 @@ public class PGPooledConnection implements PooledConnection {
       final String methodName = method.getName();
       // From Object
       if (method.getDeclaringClass() == Object.class) {
-        if (methodName.equals("toString")) {
+        if ("toString".equals(methodName)) {
           return "Pooled connection wrapping physical connection " + con;
         }
-        if (methodName.equals("equals")) {
+        if ("equals".equals(methodName)) {
           return proxy == args[0];
         }
-        if (methodName.equals("hashCode")) {
+        if ("hashCode".equals(methodName)) {
           return System.identityHashCode(proxy);
         }
         try {
@@ -289,10 +296,11 @@ public class PGPooledConnection implements PooledConnection {
       }
 
       // All the rest is from the Connection or PGConnection interface
-      if (methodName.equals("isClosed")) {
+      Connection con = this.con;
+      if ("isClosed".equals(methodName)) {
         return con == null || con.isClosed();
       }
-      if (methodName.equals("close")) {
+      if ("close".equals(methodName)) {
         // we are already closed and a double close
         // is not an error.
         if (con == null) {
@@ -310,7 +318,7 @@ public class PGPooledConnection implements PooledConnection {
           }
           con.clearWarnings();
         }
-        con = null;
+        this.con = null;
         this.proxy = null;
         last = null;
         fireConnectionClosed();
@@ -329,20 +337,20 @@ public class PGPooledConnection implements PooledConnection {
       // From here on in, we invoke via reflection, catch exceptions,
       // and check if they're fatal before rethrowing.
       try {
-        if (methodName.equals("createStatement")) {
+        if ("createStatement".equals(methodName)) {
           Statement st = castNonNull((Statement) method.invoke(con, args));
           return Proxy.newProxyInstance(getClass().getClassLoader(),
-              new Class[]{Statement.class, org.postgresql.PGStatement.class},
+              new Class[]{Statement.class, PGStatement.class},
               new StatementHandler(this, st));
-        } else if (methodName.equals("prepareCall")) {
+        } else if ("prepareCall".equals(methodName)) {
           Statement st = castNonNull((Statement) method.invoke(con, args));
           return Proxy.newProxyInstance(getClass().getClassLoader(),
-              new Class[]{CallableStatement.class, org.postgresql.PGStatement.class},
+              new Class[]{CallableStatement.class, PGStatement.class},
               new StatementHandler(this, st));
-        } else if (methodName.equals("prepareStatement")) {
+        } else if ("prepareStatement".equals(methodName)) {
           Statement st = castNonNull((Statement) method.invoke(con, args));
           return Proxy.newProxyInstance(getClass().getClassLoader(),
-              new Class[]{PreparedStatement.class, org.postgresql.PGStatement.class},
+              new Class[]{PreparedStatement.class, PGStatement.class},
               new StatementHandler(this, st));
         } else {
           return method.invoke(con, args);
@@ -364,7 +372,7 @@ public class PGPooledConnection implements PooledConnection {
       this.proxy = proxy;
     }
 
-    public void close() {
+    void close() {
       if (con != null) {
         automatic = true;
       }
@@ -373,16 +381,17 @@ public class PGPooledConnection implements PooledConnection {
       // No close event fired here: see JDBC 2.0 Optional Package spec section 6.3
     }
 
-    public boolean isClosed() {
+    @SuppressWarnings("UnusedMethod")
+    boolean isClosed() {
       return con == null;
     }
   }
 
   /**
-   * <p>Instead of declaring classes implementing Statement, PreparedStatement, and CallableStatement,
+   * Instead of declaring classes implementing Statement, PreparedStatement, and CallableStatement,
    * which would have to be updated for every JDK rev, use a dynamic proxy to handle all calls
    * through the Statement interfaces. This is the part that requires JDK 1.3 or higher, though JDK
-   * 1.2 could be supported with a 3rd-party proxy package.</p>
+   * 1.2 could be supported with a 3rd-party proxy package.
    *
    * <p>The StatementHandler is required in order to return the proper Connection proxy for the
    * getConnection method.</p>
@@ -403,36 +412,36 @@ public class PGPooledConnection implements PooledConnection {
       final String methodName = method.getName();
       // From Object
       if (method.getDeclaringClass() == Object.class) {
-        if (methodName.equals("toString")) {
+        if ("toString".equals(methodName)) {
           return "Pooled statement wrapping physical statement " + st;
         }
-        if (methodName.equals("hashCode")) {
+        if ("hashCode".equals(methodName)) {
           return System.identityHashCode(proxy);
         }
-        if (methodName.equals("equals")) {
+        if ("equals".equals(methodName)) {
           return proxy == args[0];
         }
         return method.invoke(st, args);
       }
 
+      Statement st = this.st;
       // All the rest is from the Statement interface
-      if (methodName.equals("isClosed")) {
+      if ("isClosed".equals(methodName)) {
         return st == null || st.isClosed();
       }
-      if (methodName.equals("close")) {
+      if ("close".equals(methodName)) {
         if (st == null || st.isClosed()) {
           return null;
         }
         con = null;
-        final Statement oldSt = st;
-        st = null;
-        oldSt.close();
+        this.st = null;
+        st.close();
         return null;
       }
       if (st == null || st.isClosed()) {
         throw new PSQLException(GT.tr("Statement has been closed."), PSQLState.OBJECT_NOT_IN_STATE);
       }
-      if (methodName.equals("getConnection")) {
+      if ("getConnection".equals(methodName)) {
         return castNonNull(con).getProxy(); // the proxied connection, not a physical connection
       }
 

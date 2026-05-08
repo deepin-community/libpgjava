@@ -5,35 +5,25 @@
 
 package org.postgresql.test.core;
 
-import org.postgresql.core.NativeQuery;
-import org.postgresql.test.jdbc2.BaseTest4;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.postgresql.core.NativeQuery;
+
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@RunWith(Parameterized.class)
-public class NativeQueryBindLengthTest extends BaseTest4 {
-  private final int expected;
-  private final int bindCount;
-
-  public NativeQueryBindLengthTest(String name, int expected, int bindCount) {
-    this.expected = expected;
-    this.bindCount = bindCount;
+public class NativeQueryBindLengthTest {
+  @ParameterizedTest(name = "{0} == {1}")
+  @MethodSource("data")
+  public void testBindLengthCalculation(String name, int expected, int bindCount) {
+    assertEquals(expected, NativeQuery.calculateBindLength(bindCount));
   }
 
-  @Test
-  public void testBindLengthCalculation() {
-    Assert.assertEquals(expected, NativeQuery.calculateBindLength(bindCount));
-  }
-
-  @Parameterized.Parameters(name = "{0} == {1}")
   public static Iterable<Object[]> data() {
-    List<Object[]> res = new ArrayList<Object[]>();
+    List<Object[]> res = new ArrayList<>();
     res.add(new Object[]{"'$1'.length = 2", 2, 1});
     res.add(new Object[]{"'$1$2...$9'.length = 2*9", 18, 9});
     res.add(new Object[]{"'$1$2...$9$10'.length = 2*9+3", 21, 10});

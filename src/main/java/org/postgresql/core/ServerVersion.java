@@ -16,9 +16,13 @@ import java.text.ParsePosition;
 public enum ServerVersion implements Version {
 
   INVALID("0.0.0"),
+  // @Deprecated
   v8_2("8.2.0"),
+  // @Deprecated
   v8_3("8.3.0"),
+  // @Deprecated
   v8_4("8.4.0"),
+  // @Deprecated
   v9_0("9.0.0"),
   v9_1("9.1.0"),
   v9_2("9.2.0"),
@@ -32,7 +36,11 @@ public enum ServerVersion implements Version {
   v13("13"),
   v14("14"),
   v15("15"),
-  v16("16")
+  v16("16"),
+  v17("17"),
+  v18("18"),
+  v19("19"),
+  v20("20")
   ;
 
   private final int version;
@@ -51,9 +59,14 @@ public enum ServerVersion implements Version {
     return version;
   }
 
+  @Override
+  public int getMajorVersionNumber() {
+    return version / 10000;
+  }
+
   /**
-   * <p>Attempt to parse the server version string into an XXYYZZ form version number into a
-   * {@link Version}.</p>
+   * Attempt to parse the server version string into an XXYYZZ form version number into a
+   * {@link Version}.
    *
    * <p>If the specified version cannot be parsed, the {@link Version#getVersionNum()} will return 0.</p>
    *
@@ -66,6 +79,11 @@ public enum ServerVersion implements Version {
       @Override
       public int getVersionNum() {
         return versionNum;
+      }
+
+      @Override
+      public int getMajorVersionNumber() {
+        return versionNum / 10000;
       }
 
       @Override
@@ -89,7 +107,7 @@ public enum ServerVersion implements Version {
   }
 
   /**
-   * <p>Attempt to parse the server version string into an XXYYZZ form version number.</p>
+   * Attempt to parse the server version string into an XXYYZZ form version number.
    *
    * <p>Returns 0 if the version could not be parsed.</p>
    *
@@ -102,7 +120,7 @@ public enum ServerVersion implements Version {
    * <p>The yy or zz version parts may be larger than 99. A NumberFormatException is thrown if a
    * version part is out of range.</p>
    *
-   * @param serverVersion server vertion in a XXYYZZ form
+   * @param serverVersion server version in a XXYYZZ form
    * @return server version in number form
    */
   static int parseServerVersionStr(/* @Nullable */ String serverVersion) throws NumberFormatException {

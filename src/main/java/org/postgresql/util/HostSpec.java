@@ -9,6 +9,7 @@ import static java.util.regex.Pattern.compile;
 
 // import org.checkerframework.checker.nullness.qual.Nullable;
 
+import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,6 +42,7 @@ public class HostSpec {
     return port;
   }
 
+  @Override
   public String toString() {
     return host + ":" + port;
   }
@@ -80,12 +82,12 @@ public class HostSpec {
   }
 
   @SuppressWarnings("regex")
-  private /* @Nullable */ Pattern toPattern(String mask) {
+  private static /* @Nullable */ Pattern toPattern(String mask) {
     StringBuilder joiner = new StringBuilder();
     String separator = "";
     for (String disjunct : mask.split("\\|")) {
       if (!disjunct.isEmpty()) {
-        String regex = disjunctToRegex(disjunct.toLowerCase());
+        String regex = disjunctToRegex(disjunct.toLowerCase(Locale.ROOT));
         joiner.append(separator).append(regex);
         separator = "|";
       }
@@ -94,7 +96,7 @@ public class HostSpec {
     return joiner.length() == 0 ? null : compile(joiner.toString());
   }
 
-  private String disjunctToRegex(String disjunct) {
+  private static String disjunctToRegex(String disjunct) {
     String regex;
 
     if (disjunct.startsWith("*")) {

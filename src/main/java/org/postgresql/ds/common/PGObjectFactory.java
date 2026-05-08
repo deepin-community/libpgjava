@@ -6,7 +6,6 @@
 package org.postgresql.ds.common;
 
 import org.postgresql.ds.PGConnectionPoolDataSource;
-import org.postgresql.ds.PGPoolingDataSource;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.postgresql.util.internal.Nullness;
 
@@ -33,37 +32,40 @@ public class PGObjectFactory implements ObjectFactory {
   /**
    * Dereferences a PostgreSQL DataSource. Other types of references are ignored.
    */
+  @Override
   public /* @Nullable */ Object getObjectInstance(Object obj, Name name, Context nameCtx,
       Hashtable<?, ?> environment) throws Exception {
     Reference ref = (Reference) obj;
     String className = ref.getClassName();
     // Old names are here for those who still use them
-    if (className.equals("org.postgresql.ds.PGSimpleDataSource")
-        || className.equals("org.postgresql.jdbc2.optional.SimpleDataSource")
-        || className.equals("org.postgresql.jdbc3.Jdbc3SimpleDataSource")) {
+    if ("org.postgresql.ds.PGSimpleDataSource".equals(className)
+        || "org.postgresql.jdbc2.optional.SimpleDataSource".equals(className)
+        || "org.postgresql.jdbc3.Jdbc3SimpleDataSource".equals(className)) {
       return loadSimpleDataSource(ref);
-    } else if (className.equals("org.postgresql.ds.PGConnectionPoolDataSource")
-        || className.equals("org.postgresql.jdbc2.optional.ConnectionPool")
-        || className.equals("org.postgresql.jdbc3.Jdbc3ConnectionPool")) {
+    } else if ("org.postgresql.ds.PGConnectionPoolDataSource".equals(className)
+        || "org.postgresql.jdbc2.optional.ConnectionPool".equals(className)
+        || "org.postgresql.jdbc3.Jdbc3ConnectionPool".equals(className)) {
       return loadConnectionPool(ref);
-    } else if (className.equals("org.postgresql.ds.PGPoolingDataSource")
-        || className.equals("org.postgresql.jdbc2.optional.PoolingDataSource")
-        || className.equals("org.postgresql.jdbc3.Jdbc3PoolingDataSource")) {
+    } else if ("org.postgresql.ds.PGPoolingDataSource".equals(className)
+        || "org.postgresql.jdbc2.optional.PoolingDataSource".equals(className)
+        || "org.postgresql.jdbc3.Jdbc3PoolingDataSource".equals(className)) {
       return loadPoolingDataSource(ref);
     } else {
       return null;
     }
   }
 
+  @SuppressWarnings("deprecation")
   private Object loadPoolingDataSource(Reference ref) {
     // If DataSource exists, return it
     String name = Nullness.castNonNull(getProperty(ref, "dataSourceName"));
-    PGPoolingDataSource pds = PGPoolingDataSource.getDataSource(name);
+    org.postgresql.ds.PGPoolingDataSource pds =
+        org.postgresql.ds.PGPoolingDataSource.getDataSource(name);
     if (pds != null) {
       return pds;
     }
     // Otherwise, create a new one
-    pds = new PGPoolingDataSource();
+    pds = new org.postgresql.ds.PGPoolingDataSource();
     pds.setDataSourceName(name);
     loadBaseDataSource(pds, ref);
     String min = getProperty(ref, "initialConnections");

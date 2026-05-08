@@ -9,10 +9,12 @@ import org.postgresql.PGProperty;
 import org.postgresql.core.PGStream;
 import org.postgresql.core.SocketFactoryFactory;
 import org.postgresql.jdbc.SslMode;
+import org.postgresql.jdbc.SslNegotiation;
 import org.postgresql.util.GT;
 import org.postgresql.util.ObjectFactory;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
+import org.postgresql.util.internal.Nullness;
 
 import java.io.IOException;
 import java.util.Properties;
@@ -20,6 +22,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -36,6 +39,13 @@ public class MakeSSL extends ObjectFactory {
     try {
       newConnection = (SSLSocket) factory.createSocket(stream.getSocket(),
           stream.getHostSpec().getHost(), stream.getHostSpec().getPort(), true);
+      int connectTimeoutSeconds = PGProperty.CONNECT_TIMEOUT.getInt(info);
+      newConnection.setSoTimeout(connectTimeoutSeconds * 1000);
+      if (SslNegotiation.of(Nullness.castNonNull(PGProperty.SSL_NEGOTIATION.getOrDefault(info))) == SslNegotiation.DIRECT ) {
+        SSLParameters sslParameters = newConnection.getSSLParameters();
+        sslParameters.setApplicationProtocols(new String[]{"postgresql"});
+        newConnection.setSSLParameters(sslParameters);
+      }
       // We must invoke manually, otherwise the exceptions are hidden
       newConnection.setUseClientMode(true);
       newConnection.startHandshake();
@@ -51,20 +61,22 @@ public class MakeSSL extends ObjectFactory {
     if (sslMode.verifyPeerName()) {
       verifyPeerName(stream, info, newConnection);
     }
-
+    // Zero timeout (default) means infinite
+    int socketTimeout = PGProperty.SOCKET_TIMEOUT.getInt(info);
+    newConnection.setSoTimeout(socketTimeout * 1000);
     stream.changeSocket(newConnection);
   }
 
   private static void verifyPeerName(PGStream stream, Properties info, SSLSocket newConnection)
       throws PSQLException {
     HostnameVerifier hvn;
-    String sslhostnameverifier = PGProperty.SSL_HOSTNAME_VERIFIER.get(info);
+    String sslhostnameverifier = PGProperty.SSL_HOSTNAME_VERIFIER.getOrDefault(info);
     if (sslhostnameverifier == null) {
       hvn = PGjdbcHostnameVerifier.INSTANCE;
       sslhostnameverifier = "PgjdbcHostnameVerifier";
     } else {
       try {
-        hvn = (HostnameVerifier) instantiate(sslhostnameverifier, info, false, null);
+        hvn = instantiate(HostnameVerifier.class, sslhostnameverifier, info, false, null);
       } catch (Exception e) {
         throw new PSQLException(
             GT.tr("The HostnameVerifier class provided {0} could not be instantiated.",

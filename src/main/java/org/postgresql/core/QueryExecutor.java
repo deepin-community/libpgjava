@@ -17,6 +17,7 @@ import org.postgresql.util.HostSpec;
 
 // import org.checkerframework.checker.nullness.qual.Nullable;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
@@ -26,7 +27,7 @@ import java.util.Set;
 import java.util.TimeZone;
 
 /**
- * <p>Abstracts the protocol-specific details of executing a query.</p>
+ * Abstracts the protocol-specific details of executing a query.
  *
  * <p>Every connection has a single QueryExecutor implementation associated with it. This object
  * provides:</p>
@@ -333,7 +334,34 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
   /**
    * @return the version of the implementation
    */
-  int getProtocolVersion();
+  ProtocolVersion getProtocolVersion();
+
+  /**
+   * Adds a single oid that should be received using binary encoding.
+   *
+   * @param oid The oid to request with binary encoding.
+   */
+  void addBinaryReceiveOid(int oid);
+
+  /**
+   * Remove given oid from the list of oids for binary receive encoding.
+   *
+   * <p>Note: the binary receive for the oid can be re-activated later.</p>
+   *
+   * @param oid The oid to request with binary encoding.
+   */
+  void removeBinaryReceiveOid(int oid);
+
+  /**
+   * Gets the oids that should be received using binary encoding.
+   *
+   * <p>Note: this returns an unmodifiable set, and its contents might not reflect the current state.</p>
+   *
+   * @return The oids to request with binary encoding.
+   * @deprecated the method returns a copy of the set, so it is not efficient. Use {@link #useBinaryForReceive(int)}
+   */
+  @Deprecated
+  Set<? extends Integer> getBinaryReceiveOids();
 
   /**
    * Sets the oids that should be received using binary encoding.
@@ -341,6 +369,33 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
    * @param useBinaryForOids The oids to request with binary encoding.
    */
   void setBinaryReceiveOids(Set<Integer> useBinaryForOids);
+
+  /**
+   * Adds a single oid that should be sent using binary encoding.
+   *
+   * @param oid The oid to send with binary encoding.
+   */
+  void addBinarySendOid(int oid);
+
+  /**
+   * Remove given oid from the list of oids for binary send encoding.
+   *
+   * <p>Note: the binary send for the oid can be re-activated later.</p>
+   *
+   * @param oid The oid to send with binary encoding.
+   */
+  void removeBinarySendOid(int oid);
+
+  /**
+   * Gets the oids that should be sent using binary encoding.
+   *
+   * <p>Note: this returns an unmodifiable set, and its contents might not reflect the current state.</p>
+   *
+   * @return useBinaryForOids The oids to send with binary encoding.
+   * @deprecated the method returns a copy of the set, so it is not efficient. Use {@link #useBinaryForSend(int)}
+   */
+  @Deprecated
+  Set<? extends Integer> getBinarySendOids();
 
   /**
    * Sets the oids that should be sent using binary encoding.
@@ -396,6 +451,15 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
   void close();
 
   /**
+   * Returns an action that would close the connection cleanly.
+   * The returned object should refer only the minimum subset of objects required
+   * for proper resource cleanup. For instance, it should better not hold a strong reference to
+   * {@link QueryExecutor}.
+   * @return action that would close the connection cleanly.
+   */
+  Closeable getCloseAction();
+
+  /**
    * Check if this connection is closed.
    *
    * @return true iff the connection is closed.
@@ -403,7 +467,7 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
   boolean isClosed();
 
   /**
-   * <p>Return the server version from the server_version GUC.</p>
+   * Return the server version from the server_version GUC.
    *
    * <p>Note that there's no requirement for this to be numeric or of the form x.y.z. PostgreSQL
    * development releases usually have the format x.ydevel e.g. 9.4devel; betas usually x.ybetan
@@ -412,7 +476,7 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
    * <p>Don't use this string for logic, only use it when displaying the server version to the user.
    * Prefer getServerVersionNum() for all logic purposes.</p>
    *
-   * @return the server version string from the server_version guc
+   * @return the server version string from the server_version GUC
    */
   String getServerVersion();
 
@@ -433,7 +497,7 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
   /* @Nullable */ SQLWarning getWarnings();
 
   /**
-   * <p>Get a machine-readable server version.</p>
+   * Get a machine-readable server version.
    *
    * <p>This returns the value of the server_version_num GUC. If no such GUC exists, it falls back on
    * attempting to parse the text server version for the major version. If there's no minor version
@@ -490,6 +554,8 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
 
   PreferQueryMode getPreferQueryMode();
 
+  void setPreferQueryMode(PreferQueryMode mode);
+
   AutoSave getAutoSave();
 
   void setAutoSave(AutoSave autoSave);
@@ -515,7 +581,7 @@ public interface QueryExecutor extends TypeTransferModeRegistry {
   int getNetworkTimeout() throws IOException;
 
   // Expose parameter status to PGConnection
-  Map<String,String> getParameterStatuses();
+  Map<String, String> getParameterStatuses();
 
   /* @Nullable */ String getParameterStatus(String parameterName);
 

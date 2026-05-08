@@ -14,14 +14,15 @@ import org.postgresql.util.GT;
 import org.postgresql.util.ObjectFactory;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
+import org.postgresql.util.internal.FileUtils;
 
 // import org.checkerframework.checker.initialization.qual.UnderInitialization;
 // import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.io.Console;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.GeneralSecurityException;
 import java.security.KeyManagementException;
 import java.security.KeyStore;
@@ -29,6 +30,7 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
+import java.util.Locale;
 import java.util.Properties;
 
 import javax.net.ssl.KeyManager;
@@ -53,10 +55,10 @@ public class LibPQFactory extends WrappedFactory {
       Properties info) throws PSQLException {
     // Determine the callback handler
     CallbackHandler cbh;
-    String sslpasswordcallback = PGProperty.SSL_PASSWORD_CALLBACK.get(info);
+    String sslpasswordcallback = PGProperty.SSL_PASSWORD_CALLBACK.getOrDefault(info);
     if (sslpasswordcallback != null) {
       try {
-        cbh = (CallbackHandler) ObjectFactory.instantiate(sslpasswordcallback, info, false, null);
+        cbh = ObjectFactory.instantiate(CallbackHandler.class, sslpasswordcallback, info, false, null);
       } catch (Exception e) {
         throw new PSQLException(
           GT.tr("The password callback class provided {0} could not be instantiated.",
@@ -64,21 +66,27 @@ public class LibPQFactory extends WrappedFactory {
           PSQLState.CONNECTION_FAILURE, e);
       }
     } else {
-      cbh = new ConsoleCallbackHandler(PGProperty.SSL_PASSWORD.get(info));
+      cbh = new ConsoleCallbackHandler(PGProperty.SSL_PASSWORD.getOrDefault(info));
     }
     return cbh;
   }
 
-  private void initPk8(
-      /* @UnderInitialization(WrappedFactory.class) */ LibPQFactory this,
-      String sslkeyfile, String defaultdir, Properties info) throws  PSQLException {
-
+  private String getCertFilePath(
+          /* @UnderInitialization(WrappedFactory.class) */LibPQFactory this, String defaultdir, Properties info) {
     // Load the client's certificate and key
-    String sslcertfile = PGProperty.SSL_CERT.get(info);
+    String sslcertfile = PGProperty.SSL_CERT.getOrDefault(info);
     if (sslcertfile == null) { // Fall back to default
       defaultfile = true;
       sslcertfile = defaultdir + "postgresql.crt";
     }
+    return sslcertfile;
+  }
+
+  private void initPk8(
+      /* @UnderInitialization(WrappedFactory.class) */LibPQFactory this,
+      String sslkeyfile, String defaultdir, Properties info) throws PSQLException {
+
+    String sslcertfile = getCertFilePath(defaultdir, info);
 
     // If the properties are empty, give null to prevent client key selection
     km = new LazyKeyManager(("".equals(sslcertfile) ? null : sslcertfile),
@@ -89,6 +97,18 @@ public class LibPQFactory extends WrappedFactory {
       /* @UnderInitialization(WrappedFactory.class) */ LibPQFactory this,
       String sslkeyfile, Properties info) throws PSQLException {
     km = new PKCS12KeyManager(sslkeyfile, getCallbackHandler(info));
+  }
+
+  private void initPEM(
+      /* @UnderInitialization(WrappedFactory.class) */LibPQFactory this,
+      String sslKeyFile, String defaultdir, Properties info) throws PSQLException {
+    try {
+      String sslCertFile = getCertFilePath(defaultdir, info);
+      String algorithm = castNonNull(PGProperty.PEM_KEY_ALGORITHM.getOrDefault(info));
+      km = new PEMKeyManager(sslKeyFile, sslCertFile, algorithm);
+    } catch (Exception ex) {
+      throw new PSQLException(GT.tr("Could not initialize PEMKeyManager."), PSQLState.CONNECTION_FAILURE, ex);
+    }
   }
 
   /**
@@ -104,13 +124,13 @@ public class LibPQFactory extends WrappedFactory {
       String pathsep = System.getProperty("file.separator");
       String defaultdir;
 
-      if (System.getProperty("os.name").toLowerCase().contains("windows")) { // It is Windows
+      if (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows")) { // It is Windows
         defaultdir = System.getenv("APPDATA") + pathsep + "postgresql" + pathsep;
       } else {
         defaultdir = System.getProperty("user.home") + pathsep + ".postgresql" + pathsep;
       }
 
-      String sslkeyfile = PGProperty.SSL_KEY.get(info);
+      String sslkeyfile = PGProperty.SSL_KEY.getOrDefault(info);
       if (sslkeyfile == null) { // Fall back to default
         defaultfile = true;
         sslkeyfile = defaultdir + "postgresql.pk8";
@@ -118,6 +138,8 @@ public class LibPQFactory extends WrappedFactory {
 
       if (sslkeyfile.endsWith(".p12") || sslkeyfile.endsWith(".pfx")) {
         initP12(sslkeyfile, info);
+      } else if (sslkeyfile.endsWith(".key") || sslkeyfile.endsWith(".pem")) {
+        initPEM(sslkeyfile, defaultdir, info);
       } else {
         initPk8(sslkeyfile, defaultdir, info);
       }
@@ -138,13 +160,13 @@ public class LibPQFactory extends WrappedFactory {
           // this should never happen
           throw new NoSuchAlgorithmException("jks KeyStore not available");
         }
-        String sslrootcertfile = PGProperty.SSL_ROOT_CERT.get(info);
+        String sslrootcertfile = PGProperty.SSL_ROOT_CERT.getOrDefault(info);
         if (sslrootcertfile == null) { // Fall back to default
           sslrootcertfile = defaultdir + "root.crt";
         }
-        FileInputStream fis;
+        InputStream is;
         try {
-          fis = new FileInputStream(sslrootcertfile); // NOSONAR
+          is = FileUtils.newBufferedInputStream(sslrootcertfile); // NOSONAR
         } catch (FileNotFoundException ex) {
           throw new PSQLException(
               GT.tr("Could not open SSL root certificate file {0}.", sslrootcertfile),
@@ -152,9 +174,9 @@ public class LibPQFactory extends WrappedFactory {
         }
         try {
           CertificateFactory cf = CertificateFactory.getInstance("X.509");
-          // Certificate[] certs = cf.generateCertificates(fis).toArray(new Certificate[]{}); //Does
+          // Certificate[] certs = cf.generateCertificates(is).toArray(new Certificate[]{}); //Does
           // not work in java 1.4
-          Object[] certs = cf.generateCertificates(fis).toArray(new Certificate[]{});
+          Object[] certs = cf.generateCertificates(is).toArray(new Certificate[]{});
           ks.load(null, null);
           for (int i = 0; i < certs.length; i++) {
             ks.setCertificateEntry("cert" + i, (Certificate) certs[i]);
@@ -171,7 +193,7 @@ public class LibPQFactory extends WrappedFactory {
               PSQLState.CONNECTION_FAILURE, gsex);
         } finally {
           try {
-            fis.close();
+            is.close();
           } catch (IOException e) {
             /* ignore */
           }
@@ -203,10 +225,13 @@ public class LibPQFactory extends WrappedFactory {
   public void throwKeyManagerException() throws PSQLException {
     if (km != null) {
       if (km instanceof LazyKeyManager) {
-        ((LazyKeyManager)km).throwKeyManagerException();
+        ((LazyKeyManager) km).throwKeyManagerException();
       }
       if (km instanceof PKCS12KeyManager) {
-        ((PKCS12KeyManager)km).throwKeyManagerException();
+        ((PKCS12KeyManager) km).throwKeyManagerException();
+      }
+      if (km instanceof PEMKeyManager) {
+        ((PEMKeyManager) km).throwKeyManagerException();
       }
     }
   }
@@ -217,7 +242,7 @@ public class LibPQFactory extends WrappedFactory {
    */
   public static class ConsoleCallbackHandler implements CallbackHandler {
 
-    private char /* @Nullable */ [] password = null;
+    private char /* @Nullable */ [] password;
 
     ConsoleCallbackHandler(/* @Nullable */ String password) {
       if (password != null) {
@@ -233,6 +258,7 @@ public class LibPQFactory extends WrappedFactory {
      *         PasswordCallback is supplied
      */
     @Override
+    @SuppressWarnings("SystemConsoleNull")
     public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
       Console cons = System.console();
       char[] password = this.password;

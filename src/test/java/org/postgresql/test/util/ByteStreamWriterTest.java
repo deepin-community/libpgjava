@@ -5,19 +5,18 @@
 
 package org.postgresql.test.util;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
-import org.postgresql.test.SlowTests;
 import org.postgresql.test.TestUtil;
 import org.postgresql.test.jdbc2.BaseTest4;
 import org.postgresql.util.ByteBufferByteStreamWriter;
 import org.postgresql.util.ByteStreamWriter;
 
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -31,15 +30,17 @@ public class ByteStreamWriterTest extends BaseTest4 {
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    assumeByteaSupported();
     TestUtil.createTempTable(con, "images", "img bytea");
   }
 
-  private ByteBuffer testData(int size) {
+  private static ByteBuffer testData(int size) {
     ByteBuffer data = ByteBuffer.allocate(size);
     Random random = new Random(31459);
-    while (data.remaining() > 0) {
+    while (data.remaining() > 8) {
       data.putLong(random.nextLong());
+    }
+    while (data.remaining() > 0) {
+      data.put((byte) (random.nextInt() % 256));
     }
     data.rewind();
     return data;
@@ -74,7 +75,7 @@ public class ByteStreamWriterTest extends BaseTest4 {
       try {
         rs.next();
         byte[] actualData = rs.getBytes(1);
-        assertArrayEquals("Sent and received data are not the same", data, actualData);
+        assertArrayEquals(data, actualData, "Sent and received data are not the same");
       } finally {
         rs.close();
       }
@@ -98,6 +99,52 @@ public class ByteStreamWriterTest extends BaseTest4 {
   }
 
   @Test
+  public void testLength37b() throws Exception {
+    ByteBuffer testData = testData(37);
+    insertStream(testData);
+    validateContent(testData);
+  }
+
+  @Test
+  public void testLength2KbReadOnly() throws Exception {
+    ByteBuffer testData = testData(2 * 1024);
+    // Read-only buffer does not provide access to the array, so we test it separately
+    insertStream(testData.asReadOnlyBuffer());
+    validateContent(testData);
+  }
+
+  @Test
+  public void testTwoBuffers() throws Exception {
+    ByteBuffer testData = testData(20);
+    ByteBuffer part1 = testData.duplicate();
+    part1.position(0);
+    part1.limit(9);
+    ByteBuffer part2 = testData.duplicate();
+    part2.position(part1.limit());
+    part2.limit(testData.limit());
+    // Read-only buffer does not provide access to the array, so we test it separately
+    insertStream(ByteStreamWriter.of(part1, part2));
+    validateContent(testData);
+  }
+
+  @Test
+  public void testThreeBuffersWithReadonly() throws Exception {
+    ByteBuffer testData = testData(20);
+    ByteBuffer part1 = testData.duplicate();
+    part1.position(0);
+    part1.limit(9);
+    ByteBuffer part2 = testData.duplicate();
+    part2.position(part1.limit());
+    part2.limit(15);
+    ByteBuffer part3 = testData.duplicate();
+    part3.position(part2.limit());
+    part3.limit(testData.limit());
+    // Read-only buffer does not provide access to the array, so we test it separately
+    insertStream(ByteStreamWriter.of(part1, part2.asReadOnlyBuffer(), part3));
+    validateContent(testData);
+  }
+
+  @Test
   public void testLength10Kb() throws Exception {
     ByteBuffer testData = testData(10 * 1024);
     insertStream(testData);
@@ -105,7 +152,6 @@ public class ByteStreamWriterTest extends BaseTest4 {
   }
 
   @Test
-  @Category(SlowTests.class)
   public void testLength100Kb() throws Exception {
     ByteBuffer testData = testData(100 * 1024);
     insertStream(testData);
@@ -113,7 +159,6 @@ public class ByteStreamWriterTest extends BaseTest4 {
   }
 
   @Test
-  @Category(SlowTests.class)
   public void testLength200Kb() throws Exception {
     ByteBuffer testData = testData(200 * 1024);
     insertStream(testData);
@@ -139,9 +184,8 @@ public class ByteStreamWriterTest extends BaseTest4 {
       fail("did not throw exception when too much content");
     } catch (SQLException e) {
       Throwable cause = e.getCause();
-      assertTrue("cause wan't an IOException", cause instanceof IOException);
-      assertEquals("Incorrect exception message",
-          cause.getMessage(), "Attempt to write more than the specified 4 bytes");
+      assertInstanceOf(IOException.class, cause, "cause wan't an IOException");
+      assertEquals(cause.getMessage(), "Attempt to write more than the specified 4 bytes", "Incorrect exception message");
     }
   }
 
@@ -153,7 +197,7 @@ public class ByteStreamWriterTest extends BaseTest4 {
       fail("did not throw exception when IOException thrown");
     } catch (SQLException sqle) {
       Throwable cause = sqle.getCause();
-      assertEquals("Incorrect exception cause", e, cause);
+      assertEquals(e, cause, "Incorrect exception cause");
     }
   }
 
@@ -165,11 +209,10 @@ public class ByteStreamWriterTest extends BaseTest4 {
       fail("did not throw exception when RuntimeException thrown");
     } catch (SQLException sqle) {
       Throwable cause = sqle.getCause();
-      assertTrue("cause wan't an IOException", cause instanceof IOException);
-      assertEquals("Incorrect exception message",
-          cause.getMessage(), "Error writing bytes to stream");
+      assertInstanceOf(IOException.class, cause, "cause wan't an IOException");
+      assertEquals(cause.getMessage(), "Error writing bytes to stream", "Incorrect exception message");
       Throwable nestedCause = cause.getCause();
-      assertEquals("Incorrect exception cause", e, nestedCause);
+      assertEquals(e, nestedCause, "Incorrect exception cause");
     }
   }
 

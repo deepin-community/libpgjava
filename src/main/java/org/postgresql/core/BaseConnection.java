@@ -20,6 +20,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.TimerTask;
+import java.util.logging.Logger;
 
 /**
  * Driver-internal connection interface. Application code should not use this interface.
@@ -30,6 +31,7 @@ public interface BaseConnection extends PGConnection, Connection {
    *
    * @throws SQLException if something goes wrong.
    */
+  @Override
   void cancelQuery() throws SQLException;
 
   /**
@@ -70,9 +72,9 @@ public interface BaseConnection extends PGConnection, Connection {
   ReplicationProtocol getReplicationProtocol();
 
   /**
-   * <p>Construct and return an appropriate object for the given type and value. This only considers
+   * Construct and return an appropriate object for the given type and value. This only considers
    * the types registered via {@link org.postgresql.PGConnection#addDataType(String, Class)} and
-   * {@link org.postgresql.PGConnection#addDataType(String, String)}.</p>
+   * {@link org.postgresql.PGConnection#addDataType(String, String)}.
    *
    * <p>If no class is registered as handling the given type, then a generic
    * {@link org.postgresql.util.PGobject} instance is returned.</p>
@@ -93,7 +95,7 @@ public interface BaseConnection extends PGConnection, Connection {
   TypeInfo getTypeInfo();
 
   /**
-   * <p>Check if we have at least a particular server version.</p>
+   * Check if we have at least a particular server version.
    *
    * <p>The input version is of the form xxyyzz, matching a PostgreSQL version like xx.yy.zz. So 9.0.12
    * is 90012.</p>
@@ -104,7 +106,7 @@ public interface BaseConnection extends PGConnection, Connection {
   boolean haveMinimumServerVersion(int ver);
 
   /**
-   * <p>Check if we have at least a particular server version.</p>
+   * Check if we have at least a particular server version.
    *
    * <p>The input version is of the form xxyyzz, matching a PostgreSQL version like xx.yy.zz. So 9.0.12
    * is 90012.</p>
@@ -147,10 +149,11 @@ public interface BaseConnection extends PGConnection, Connection {
   boolean getStandardConformingStrings();
 
   // Ew. Quick hack to give access to the connection-specific utils implementation.
+  @Deprecated
   TimestampUtils getTimestampUtils();
 
   // Get the per-connection logger.
-  java.util.logging.Logger getLogger();
+  Logger getLogger();
 
   // Get the bind-string-as-varchar config flag
   boolean getStringVarcharFlag();
@@ -235,4 +238,10 @@ public interface BaseConnection extends PGConnection, Connection {
    * @return true if should be included and passed on to other exceptions
    */
   boolean getLogServerErrorDetail();
+
+  /**
+   * Returns true if boolean values should be converted to numeric types (1/0).
+   * @return true if boolean to numeric conversion is enabled
+   */
+  boolean getConvertBooleanToNumeric();
 }

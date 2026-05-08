@@ -5,11 +5,11 @@
 
 package org.postgresql.largeobject;
 
-import static org.postgresql.util.internal.Nullness.castNonNull;
-
 import org.postgresql.core.BaseConnection;
 import org.postgresql.fastpath.Fastpath;
 import org.postgresql.fastpath.FastpathArg;
+import org.postgresql.util.ByteStreamWriter;
+import org.postgresql.util.GT;
 import org.postgresql.util.PSQLException;
 import org.postgresql.util.PSQLState;
 
@@ -21,8 +21,8 @@ import java.io.OutputStream;
 import java.sql.SQLException;
 
 /**
- * <p>This class provides the basic methods required to run the interface, plus a pair of methods that
- * provide InputStream and OutputStream classes for this object.</p>
+ * This class provides the basic methods required to run the interface, plus a pair of methods that
+ * provide InputStream and OutputStream classes for this object.
  *
  * <p>Normally, client code would use the getAsciiStream, getBinaryStream, or getUnicodeStream methods
  * in ResultSet, or setAsciiStream, setBinaryStream, or setUnicodeStream methods in
@@ -42,9 +42,10 @@ import java.sql.SQLException;
  * @see java.sql.PreparedStatement#setBinaryStream
  * @see java.sql.PreparedStatement#setUnicodeStream
  */
+@SuppressWarnings("deprecation") // support for deprecated Fastpath API
 public class LargeObject
-    implements AutoCloseable
-    /* hi, checkstyle */ {
+    implements AutoCloseable {
+
   /**
    * Indicates a seek from the beginning of a file.
    */
@@ -60,6 +61,8 @@ public class LargeObject
    */
   public static final int SEEK_END = 2;
 
+  private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
   private final Fastpath fp; // Fastpath API to use
   private final long oid; // OID of this object
   private final int mode; // read/write mode of this object
@@ -67,13 +70,25 @@ public class LargeObject
 
   private /* @Nullable */ BlobOutputStream os; // The current output stream
 
-  private boolean closed = false; // true when we are closed
+  private boolean closed; // true when we are closed
 
   private /* @Nullable */ BaseConnection conn; // Only initialized when open a LOB with CommitOnClose
   private final boolean commitOnClose; // Only initialized when open a LOB with CommitOnClose
 
   /**
-   * <p>This opens a large object.</p>
+   * Checks if this LargeObject is closed and throws an exception if it is.
+   *
+   * @throws SQLException if this LargeObject has been closed
+   */
+  private void checkClosed() throws SQLException {
+    if (closed) {
+      throw new PSQLException(GT.tr("This large object has been closed."),
+          PSQLState.OBJECT_NOT_IN_STATE);
+    }
+  }
+
+  /**
+   * This opens a large object.
    *
    * <p>If the object does not exist, then an SQLException is thrown.</p>
    *
@@ -106,7 +121,7 @@ public class LargeObject
   }
 
   /**
-   * <p>This opens a large object.</p>
+   * This opens a large object.
    *
    * <p>If the object does not exist, then an SQLException is thrown.</p>
    *
@@ -121,19 +136,9 @@ public class LargeObject
   }
 
   public LargeObject copy() throws SQLException {
+    checkClosed();
     return new LargeObject(fp, oid, mode);
   }
-
-  /*
-   * Release large object resources during garbage cleanup.
-   *
-   * This code used to call close() however that was problematic because the scope of the fd is a
-   * transaction, thus if commit or rollback was called before garbage collection ran then the call
-   * to close would error out with an invalid large object handle. So this method now does nothing
-   * and lets the server handle cleanup when it ends the transaction.
-   *
-   * protected void finalize() throws SQLException { }
-   */
 
   /**
    * @return the OID of this LargeObject
@@ -156,29 +161,31 @@ public class LargeObject
    *
    * @throws SQLException if a database-access error occurs.
    */
+  @Override
   public void close() throws SQLException {
-    if (!closed) {
-      // flush any open output streams
-      if (os != null) {
-        try {
-          // we can't call os.close() otherwise we go into an infinite loop!
-          os.flush();
-        } catch (IOException ioe) {
-          throw new PSQLException("Exception flushing output stream", PSQLState.DATA_ERROR, ioe);
-        } finally {
-          os = null;
-        }
+    if (closed) {
+      return;
+    }
+    closed = true;
+    // flush any open output streams
+    if (os != null) {
+      try {
+        // we can't call os.close() otherwise we go into an infinite loop!
+        os.flush();
+      } catch (IOException ioe) {
+        throw new PSQLException("Exception flushing output stream", PSQLState.DATA_ERROR, ioe);
+      } finally {
+        os = null;
       }
+    }
 
-      // finally close
-      FastpathArg[] args = new FastpathArg[1];
-      args[0] = new FastpathArg(fd);
-      fp.fastpath("lo_close", args); // true here as we dont care!!
-      closed = true;
-      BaseConnection conn = this.conn;
-      if (this.commitOnClose && conn != null) {
-        conn.commit();
-      }
+    // finally close
+    FastpathArg[] args = new FastpathArg[1];
+    args[0] = new FastpathArg(fd);
+    fp.fastpath("lo_close", args); // true here as we dont care!!
+    BaseConnection conn = this.conn;
+    if (this.commitOnClose && conn != null) {
+      conn.commit();
     }
   }
 
@@ -190,12 +197,17 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public byte[] read(int len) throws SQLException {
+    checkClosed();
     // This is the original method, where the entire block (len bytes)
     // is retrieved in one go.
     FastpathArg[] args = new FastpathArg[2];
     args[0] = new FastpathArg(fd);
     args[1] = new FastpathArg(len);
-    return castNonNull(fp.getData("loread", args));
+    byte[] bytes = fp.getData("loread", args);
+    if (bytes == null) {
+      return EMPTY_BYTE_ARRAY;
+    }
+    return bytes;
   }
 
   /**
@@ -208,13 +220,12 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public int read(byte[] buf, int off, int len) throws SQLException {
+    checkClosed();
     byte[] b = read(len);
-    if (b == null) {
+    if (b.length == 0) {
       return 0;
     }
-    if (b.length < len) {
-      len = b.length;
-    }
+    len = Math.min(len, b.length);
     System.arraycopy(b, 0, buf, off, len);
     return len;
   }
@@ -226,6 +237,7 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public void write(byte[] buf) throws SQLException {
+    checkClosed();
     FastpathArg[] args = new FastpathArg[2];
     args[0] = new FastpathArg(fd);
     args[1] = new FastpathArg(buf);
@@ -241,6 +253,7 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public void write(byte[] buf, int off, int len) throws SQLException {
+    checkClosed();
     FastpathArg[] args = new FastpathArg[2];
     args[0] = new FastpathArg(fd);
     args[1] = new FastpathArg(buf, off, len);
@@ -248,7 +261,21 @@ public class LargeObject
   }
 
   /**
-   * <p>Sets the current position within the object.</p>
+   * Writes some data from a given writer to the object.
+   *
+   * @param writer the source of the data to write
+   * @throws SQLException if a database-access error occurs.
+   */
+  public void write(ByteStreamWriter writer) throws SQLException {
+    checkClosed();
+    FastpathArg[] args = new FastpathArg[2];
+    args[0] = new FastpathArg(fd);
+    args[1] = FastpathArg.of(writer);
+    fp.fastpath("lowrite", args);
+  }
+
+  /**
+   * Sets the current position within the object.
    *
    * <p>This is similar to the fseek() call in the standard C library. It allows you to have random
    * access to the large object.</p>
@@ -258,6 +285,7 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public void seek(int pos, int ref) throws SQLException {
+    checkClosed();
     FastpathArg[] args = new FastpathArg[3];
     args[0] = new FastpathArg(fd);
     args[1] = new FastpathArg(pos);
@@ -273,6 +301,7 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public void seek64(long pos, int ref) throws SQLException {
+    checkClosed();
     FastpathArg[] args = new FastpathArg[3];
     args[0] = new FastpathArg(fd);
     args[1] = new FastpathArg(pos);
@@ -281,7 +310,7 @@ public class LargeObject
   }
 
   /**
-   * <p>Sets the current position within the object.</p>
+   * Sets the current position within the object.
    *
    * <p>This is similar to the fseek() call in the standard C library. It allows you to have random
    * access to the large object.</p>
@@ -290,6 +319,7 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public void seek(int pos) throws SQLException {
+    checkClosed();
     seek(pos, SEEK_SET);
   }
 
@@ -298,6 +328,7 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public int tell() throws SQLException {
+    checkClosed();
     FastpathArg[] args = new FastpathArg[1];
     args[0] = new FastpathArg(fd);
     return fp.getInteger("lo_tell", args);
@@ -308,14 +339,15 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public long tell64() throws SQLException {
+    checkClosed();
     FastpathArg[] args = new FastpathArg[1];
     args[0] = new FastpathArg(fd);
     return fp.getLong("lo_tell64", args);
   }
 
   /**
-   * <p>This method is inefficient, as the only way to find out the size of the object is to seek to
-   * the end, record the current position, then return to the original position.</p>
+   * This method is inefficient, as the only way to find out the size of the object is to seek to
+   * the end, record the current position, then return to the original position.
    *
    * <p>A better method will be found in the future.</p>
    *
@@ -323,6 +355,7 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public int size() throws SQLException {
+    checkClosed();
     int cp = tell();
     seek(0, SEEK_END);
     int sz = tell();
@@ -337,6 +370,7 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public long size64() throws SQLException {
+    checkClosed();
     long cp = tell64();
     seek64(0, SEEK_END);
     long sz = tell64();
@@ -353,6 +387,7 @@ public class LargeObject
    * @throws SQLException if something goes wrong
    */
   public void truncate(int len) throws SQLException {
+    checkClosed();
     FastpathArg[] args = new FastpathArg[2];
     args[0] = new FastpathArg(fd);
     args[1] = new FastpathArg(len);
@@ -368,6 +403,7 @@ public class LargeObject
    * @throws SQLException if something goes wrong
    */
   public void truncate64(long len) throws SQLException {
+    checkClosed();
     FastpathArg[] args = new FastpathArg[2];
     args[0] = new FastpathArg(fd);
     args[1] = new FastpathArg(len);
@@ -375,7 +411,7 @@ public class LargeObject
   }
 
   /**
-   * <p>Returns an {@link InputStream} from this object.</p>
+   * Returns an {@link InputStream} from this object.
    *
    * <p>This {@link InputStream} can then be used in any method that requires an InputStream.</p>
    *
@@ -383,7 +419,8 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public InputStream getInputStream() throws SQLException {
-    return new BlobInputStream(this, 4096);
+    checkClosed();
+    return new BlobInputStream(this);
   }
 
   /**
@@ -395,11 +432,27 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public InputStream getInputStream(long limit) throws SQLException {
-    return new BlobInputStream(this, 4096, limit);
+    checkClosed();
+    return new BlobInputStream(this, BlobInputStream.DEFAULT_MAX_BUFFER_SIZE, limit);
   }
 
   /**
-   * <p>Returns an {@link OutputStream} to this object.</p>
+   * Returns an {@link InputStream} from this object, that will limit the amount of data that is
+   * visible.
+   * Added mostly for testing
+   *
+   * @param bufferSize buffer size for the stream
+   * @param limit maximum number of bytes the resulting stream will serve
+   * @return {@link InputStream} from this object
+   * @throws SQLException if a database-access error occurs.
+   */
+  public InputStream getInputStream(int bufferSize, long limit) throws SQLException {
+    checkClosed();
+    return new BlobInputStream(this, bufferSize, limit);
+  }
+
+  /**
+   * Returns an {@link OutputStream} to this object.
    *
    * <p>This OutputStream can then be used in any method that requires an OutputStream.</p>
    *
@@ -407,8 +460,9 @@ public class LargeObject
    * @throws SQLException if a database-access error occurs.
    */
   public OutputStream getOutputStream() throws SQLException {
+    checkClosed();
     if (os == null) {
-      os = new BlobOutputStream(this, 4096);
+      os = new BlobOutputStream(this);
     }
     return os;
   }

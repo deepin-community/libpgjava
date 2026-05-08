@@ -26,7 +26,7 @@ import java.util.Properties;
  */
 public abstract class ConnectionFactory {
   /**
-   * <p>Establishes and initializes a new connection.</p>
+   * Establishes and initializes a new connection.
    *
    * <p>If the "protocolVersion" property is specified, only that protocol version is tried. Otherwise,
    * all protocols are tried in order, falling back to older protocols as necessary.</p>
@@ -35,21 +35,22 @@ public abstract class ConnectionFactory {
    *
    * @param hostSpecs at least one host and port to connect to; multiple elements for round-robin
    *        failover
-   * @param user the username to authenticate with; may not be null.
-   * @param database the database on the server to connect to; may not be null.
    * @param info extra properties controlling the connection; notably, "password" if present
    *        supplies the password to authenticate with.
    * @return the new, initialized, connection
    * @throws SQLException if the connection could not be established.
    */
-  public static QueryExecutor openConnection(HostSpec[] hostSpecs, String user,
-      String database, Properties info) throws SQLException {
-    String protoName = PGProperty.PROTOCOL_VERSION.get(info);
+  public static QueryExecutor openConnection(HostSpec[] hostSpecs,
+      Properties info) throws SQLException {
+    String protoName = PGProperty.PROTOCOL_VERSION.getOrDefault(info);
 
-    if (protoName == null || protoName.isEmpty() || "3".equals(protoName)) {
+    if (protoName != null && !protoName.isEmpty()
+        && (protoName.equalsIgnoreCase("3")
+          || protoName.equalsIgnoreCase("3.0")
+          || protoName.equalsIgnoreCase("3.2"))) {
       ConnectionFactory connectionFactory = new ConnectionFactoryImpl();
       QueryExecutor queryExecutor = connectionFactory.openConnectionImpl(
-          hostSpecs, user, database, info);
+          hostSpecs, info);
       if (queryExecutor != null) {
         return queryExecutor;
       }
@@ -66,8 +67,6 @@ public abstract class ConnectionFactory {
    *
    * @param hostSpecs at least one host and port to connect to; multiple elements for round-robin
    *        failover
-   * @param user the username to authenticate with; may not be null.
-   * @param database the database on the server to connect to; may not be null.
    * @param info extra properties controlling the connection; notably, "password" if present
    *        supplies the password to authenticate with.
    * @return the new, initialized, connection, or <code>null</code> if this protocol version is not
@@ -75,19 +74,19 @@ public abstract class ConnectionFactory {
    * @throws SQLException if the connection could not be established for a reason other than
    *         protocol version incompatibility.
    */
-  public abstract QueryExecutor openConnectionImpl(HostSpec[] hostSpecs, String user,
-      String database, Properties info) throws SQLException;
+  public abstract QueryExecutor openConnectionImpl(HostSpec[] hostSpecs, Properties info) throws SQLException;
 
   /**
    * Safely close the given stream.
    *
    * @param newStream The stream to close.
    */
-  protected void closeStream(/* @Nullable */ PGStream newStream) {
+  protected void closeStream(/* @Nullable */ PGStream newStream, Throwable baseThrowable) {
     if (newStream != null) {
       try {
         newStream.close();
       } catch (IOException e) {
+        e.addSuppressed(baseThrowable);
       }
     }
   }

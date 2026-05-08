@@ -5,8 +5,11 @@
 
 package org.postgresql.test.jdbc2;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.postgresql.PGConnection;
 import org.postgresql.core.BaseConnection;
@@ -18,10 +21,11 @@ import org.postgresql.jdbc.PreferQueryMode;
 import org.postgresql.test.TestUtil;
 import org.postgresql.util.PSQLException;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.sql.Array;
@@ -31,11 +35,14 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collection;
 
-@RunWith(Parameterized.class)
+@ParameterizedClass
+@MethodSource("data")
 public class ArrayTest extends BaseTest4 {
   private Connection conn;
 
@@ -43,26 +50,33 @@ public class ArrayTest extends BaseTest4 {
     setBinaryMode(binaryMode);
   }
 
-  @Parameterized.Parameters(name = "binary = {0}")
   public static Iterable<Object[]> data() {
-    Collection<Object[]> ids = new ArrayList<Object[]>();
+    Collection<Object[]> ids = new ArrayList<>();
     for (BinaryMode binaryMode : BinaryMode.values()) {
       ids.add(new Object[]{binaryMode});
     }
     return ids;
   }
 
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.createTable(con, "arrtest", "intarr int[], decarr decimal(2,1)[], strarr text[]");
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.dropTable(con, "arrtest");
+    }
+  }
+
   @Override
   public void setUp() throws Exception {
     super.setUp();
     conn = con;
-    TestUtil.createTable(conn, "arrtest", "intarr int[], decarr decimal(2,1)[], strarr text[]");
-  }
-
-  @Override
-  public void tearDown() throws SQLException {
-    TestUtil.dropTable(conn, "arrtest");
-    super.tearDown();
+    TestUtil.execute(con, "TRUNCATE arrtest");
   }
 
   @Test
@@ -98,10 +112,10 @@ public class ArrayTest extends BaseTest4 {
 
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT intarr, decarr, strarr FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     Array arr = rs.getArray(1);
-    Assert.assertEquals(Types.INTEGER, arr.getBaseType());
+    assertEquals(Types.INTEGER, arr.getBaseType());
     Integer[] intarr = (Integer[]) arr.getArray();
     assertEquals(3, intarr.length);
     assertEquals(1, intarr[0].intValue());
@@ -137,9 +151,9 @@ public class ArrayTest extends BaseTest4 {
     final Object[][][] origDblObjArray = new Object[2][2][2];
     final Object[][][] origStringObjArray = new Object[2][2][2];
     int i = 0;
-    for (int x = 0; x < 2; ++x) {
-      for (int y = 0; y < 2; ++y) {
-        for (int z = 0; z < 2; ++z) {
+    for (int x = 0; x < 2; x++) {
+      for (int y = 0; y < 2; y++) {
+        for (int z = 0; z < 2; z++) {
           origIntArray[x][y][z] = i;
           origDblArray[x][y][z] = i / 10;
           origStringArray[x][y][z] = Integer.toString(i);
@@ -159,7 +173,7 @@ public class ArrayTest extends BaseTest4 {
 
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT intarr[1], decarr[1], strarr[1] FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     assertEquals(origIntArray[0][0][0], rs.getInt(1));
     assertEquals(origDblArray[0][0][0], rs.getDouble(2), 0.001);
@@ -174,13 +188,13 @@ public class ArrayTest extends BaseTest4 {
     pstmt = conn.prepareStatement("INSERT INTO arrtest VALUES (?,?,?)");
     pstmt.setObject(1, conn.createArrayOf("int4", origIntObjArray[0][0]), Types.ARRAY);
     pstmt.setObject(2, conn.createArrayOf("float8", origDblObjArray[0][0]), Types.ARRAY);
-    pstmt.setObject(3, conn.createArrayOf("varchar",  origStringObjArray[0][0]), Types.ARRAY);
+    pstmt.setObject(3, conn.createArrayOf("varchar", origStringObjArray[0][0]), Types.ARRAY);
     pstmt.executeUpdate();
     pstmt.close();
 
     stmt = conn.createStatement();
     rs = stmt.executeQuery("SELECT intarr[1], decarr[1], strarr[1] FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     assertEquals(origIntArray[0][0][0], rs.getInt(1));
     assertEquals(origDblArray[0][0][0], rs.getDouble(2), 0.001);
@@ -195,13 +209,13 @@ public class ArrayTest extends BaseTest4 {
     pstmt = conn.prepareStatement("INSERT INTO arrtest VALUES (?,?,?)");
     pstmt.setObject(1, conn.createArrayOf("int4", origIntArray[0]), Types.ARRAY);
     pstmt.setObject(2, conn.createArrayOf("float8", origDblArray[0]), Types.ARRAY);
-    pstmt.setObject(3, conn.createArrayOf("varchar",  origStringArray[0]), Types.ARRAY);
+    pstmt.setObject(3, conn.createArrayOf("varchar", origStringArray[0]), Types.ARRAY);
     pstmt.executeUpdate();
     pstmt.close();
 
     stmt = conn.createStatement();
     rs = stmt.executeQuery("SELECT intarr[1][1], decarr[1][1], strarr[1][1], intarr[2][1], decarr[2][1], strarr[2][1] FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     assertEquals(origIntArray[0][0][0], rs.getInt(1));
     assertEquals(origDblArray[0][0][0], rs.getDouble(2), 0.001);
@@ -219,13 +233,13 @@ public class ArrayTest extends BaseTest4 {
     pstmt = conn.prepareStatement("INSERT INTO arrtest VALUES (?,?,?)");
     pstmt.setObject(1, conn.createArrayOf("int4", origIntObjArray[0]), Types.ARRAY);
     pstmt.setObject(2, conn.createArrayOf("float8", origDblObjArray[0]), Types.ARRAY);
-    pstmt.setObject(3, conn.createArrayOf("varchar",  origStringObjArray[0]), Types.ARRAY);
+    pstmt.setObject(3, conn.createArrayOf("varchar", origStringObjArray[0]), Types.ARRAY);
     pstmt.executeUpdate();
     pstmt.close();
 
     stmt = conn.createStatement();
     rs = stmt.executeQuery("SELECT intarr[1][1], decarr[1][1], strarr[1][1], intarr[2][1], decarr[2][1], strarr[2][1] FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     assertEquals(origIntArray[0][0][0], rs.getInt(1));
     assertEquals(origDblArray[0][0][0], rs.getDouble(2), 0.001);
@@ -244,13 +258,13 @@ public class ArrayTest extends BaseTest4 {
 
     pstmt.setObject(1, conn.createArrayOf("int4", origIntArray), Types.ARRAY);
     pstmt.setObject(2, conn.createArrayOf("float8", origDblArray), Types.ARRAY);
-    pstmt.setObject(3, conn.createArrayOf("varchar",  origStringArray), Types.ARRAY);
+    pstmt.setObject(3, conn.createArrayOf("varchar", origStringArray), Types.ARRAY);
     pstmt.executeUpdate();
     pstmt.close();
 
     stmt = conn.createStatement();
     rs = stmt.executeQuery("SELECT intarr[1][1][1], decarr[1][1][1], strarr[1][1][1], intarr[2][1][1], decarr[2][1][1], strarr[2][1][1] FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     assertEquals(origIntArray[0][0][0], rs.getInt(1));
     assertEquals(origDblArray[0][0][0], rs.getDouble(2), 0.001);
@@ -269,13 +283,13 @@ public class ArrayTest extends BaseTest4 {
 
     pstmt.setObject(1, conn.createArrayOf("int4", origIntObjArray), Types.ARRAY);
     pstmt.setObject(2, conn.createArrayOf("float8", origDblObjArray), Types.ARRAY);
-    pstmt.setObject(3, conn.createArrayOf("varchar",  origStringObjArray), Types.ARRAY);
+    pstmt.setObject(3, conn.createArrayOf("varchar", origStringObjArray), Types.ARRAY);
     pstmt.executeUpdate();
     pstmt.close();
 
     stmt = conn.createStatement();
     rs = stmt.executeQuery("SELECT intarr[1][1][1], decarr[1][1][1], strarr[1][1][1], intarr[2][1][1], decarr[2][1][1], strarr[2][1][1] FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     assertEquals(origIntArray[0][0][0], rs.getInt(1));
     assertEquals(origDblArray[0][0][0], rs.getDouble(2), 0.001);
@@ -293,47 +307,143 @@ public class ArrayTest extends BaseTest4 {
 
     final PGConnection arraySupport = conn.unwrap(PGConnection.class);
 
-    pstmt.setArray(1, arraySupport.createArrayOf("int4", new int[] { 1, 2, 3 }));
-    pstmt.setObject(2, arraySupport.createArrayOf("float8", new double[] { 3.1d, 1.4d }));
-    pstmt.setObject(3, arraySupport.createArrayOf("varchar", new String[] { "abc", "f'a", "fa\"b" }));
+    pstmt.setArray(1, arraySupport.createArrayOf("int4", new int[]{1, 2, 3}));
+    pstmt.setObject(2, arraySupport.createArrayOf("float8", new double[]{3.1d, 1.4d}));
+    pstmt.setObject(3, arraySupport.createArrayOf("varchar", new String[]{"abc", "f'a", "fa\"b"}));
 
     pstmt.executeUpdate();
     pstmt.close();
 
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT intarr, decarr, strarr FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     Array arr = rs.getArray(1);
-    Assert.assertEquals(Types.INTEGER, arr.getBaseType());
+    assertEquals(Types.INTEGER, arr.getBaseType());
     Integer[] intarr = (Integer[]) arr.getArray();
-    Assert.assertEquals(3, intarr.length);
-    Assert.assertEquals(1, intarr[0].intValue());
-    Assert.assertEquals(2, intarr[1].intValue());
-    Assert.assertEquals(3, intarr[2].intValue());
+    assertEquals(3, intarr.length);
+    assertEquals(1, intarr[0].intValue());
+    assertEquals(2, intarr[1].intValue());
+    assertEquals(3, intarr[2].intValue());
 
     arr = rs.getArray(2);
-    Assert.assertEquals(Types.NUMERIC, arr.getBaseType());
+    assertEquals(Types.NUMERIC, arr.getBaseType());
     BigDecimal[] decarr = (BigDecimal[]) arr.getArray();
-    Assert.assertEquals(2, decarr.length);
-    Assert.assertEquals(new BigDecimal("3.1"), decarr[0]);
-    Assert.assertEquals(new BigDecimal("1.4"), decarr[1]);
+    assertEquals(2, decarr.length);
+    assertEquals(new BigDecimal("3.1"), decarr[0]);
+    assertEquals(new BigDecimal("1.4"), decarr[1]);
 
     arr = rs.getArray(3);
-    Assert.assertEquals(Types.VARCHAR, arr.getBaseType());
+    assertEquals(Types.VARCHAR, arr.getBaseType());
     String[] strarr = (String[]) arr.getArray(2, 2);
-    Assert.assertEquals(2, strarr.length);
-    Assert.assertEquals("f'a", strarr[0]);
-    Assert.assertEquals("fa\"b", strarr[1]);
+    assertEquals(2, strarr.length);
+    assertEquals("f'a", strarr[0]);
+    assertEquals("fa\"b", strarr[1]);
 
     try {
-      arraySupport.createArrayOf("int4", Integer.valueOf(1));
+      arraySupport.createArrayOf("int4", 1);
       fail("not an array");
     } catch (PSQLException e) {
 
     }
 
     rs.close();
+  }
+
+  @Test
+  public void testSetArraysWithAnsiTypeNames() throws SQLException {
+    try {
+      TestUtil.createTable(
+          conn,
+          "ansiarraytest",
+          "floats double precision[], "
+              + "reals real[], "
+              + "varchars character varying(8)[], "
+              + "times time without time zone[], "
+              + "timestamps timestamp without time zone[], "
+              + "timestampstz timestamp with time zone[]");
+
+      PreparedStatement pstmt =
+          conn.prepareStatement("INSERT INTO ansiarraytest VALUES (?,?,?,?,?,?)");
+
+      final PGConnection arraySupport = conn.unwrap(PGConnection.class);
+
+      pstmt.setArray(1, arraySupport.createArrayOf("double precision", new Object[]{1d, 4d}));
+      pstmt.setArray(2, arraySupport.createArrayOf("real", new Object[]{0f, 3f}));
+      pstmt.setObject(
+          3, arraySupport.createArrayOf("character varying", new String[]{"abc", "f'a", "fa\"b"}));
+      pstmt.setObject(
+          4,
+          arraySupport.createArrayOf(
+              "time without time zone",
+              new Object[]{Time.valueOf("12:34:56"), Time.valueOf("03:30:25")}));
+      pstmt.setObject(
+          5,
+          arraySupport.createArrayOf(
+              "timestamp without time zone",
+              new Object[]{"2023-09-05 16:21:50", "2012-01-01 13:02:03"}));
+      pstmt.setObject(
+          6,
+          arraySupport.createArrayOf(
+              "timestamp with time zone",
+              new Object[]{"1996-01-23 12:00:00-08", "1997-08-16 16:51:00-04"}));
+
+      pstmt.executeUpdate();
+      pstmt.close();
+
+      Statement stmt = conn.createStatement();
+      ResultSet rs =
+          stmt.executeQuery(
+              "SELECT floats, reals, varchars, times, timestamps, timestampstz FROM ansiarraytest");
+      assertTrue(rs.next());
+
+      Array arr = rs.getArray(1);
+      assertEquals(Types.DOUBLE, arr.getBaseType());
+      Double[] doubles = (Double[]) arr.getArray();
+      assertEquals(2, doubles.length);
+      assertEquals(1d, doubles[0], 0);
+      assertEquals(4d, doubles[1], 0);
+
+      arr = rs.getArray(2);
+      assertEquals(Types.REAL, arr.getBaseType());
+      Float[] floats = (Float[]) arr.getArray();
+      assertEquals(2, floats.length);
+      assertEquals(0f, floats[0], 0);
+      assertEquals(3f, floats[1], 0);
+
+      arr = rs.getArray(3);
+      assertEquals(Types.VARCHAR, arr.getBaseType());
+      String[] strings = (String[]) arr.getArray();
+      assertEquals(3, strings.length);
+      assertEquals("abc", strings[0]);
+      assertEquals("f'a", strings[1]);
+      assertEquals("fa\"b", strings[2]);
+
+      arr = rs.getArray(4);
+      assertEquals(Types.TIME, arr.getBaseType());
+      Time[] times = (Time[]) arr.getArray();
+      assertEquals(2, times.length);
+      assertEquals(Time.valueOf("12:34:56"), times[0]);
+      assertEquals(Time.valueOf("03:30:25"), times[1]);
+
+      arr = rs.getArray(5);
+      assertEquals(Types.TIMESTAMP, arr.getBaseType());
+      Timestamp[] tzarr = (Timestamp[]) arr.getArray();
+      assertEquals(2, times.length);
+      assertEquals(Timestamp.valueOf("2023-09-05 16:21:50"), tzarr[0]);
+      assertEquals(Timestamp.valueOf("2012-01-01 13:02:03"), tzarr[1]);
+
+      arr = rs.getArray(6);
+      assertEquals(Types.TIMESTAMP, arr.getBaseType());
+      tzarr = (Timestamp[]) arr.getArray();
+      assertEquals(2, times.length);
+      assertEquals(822427200000L, tzarr[0].getTime());
+      assertEquals(871764660000L, tzarr[1].getTime());
+
+      rs.close();
+    } finally {
+      TestUtil.dropTable(conn, "ansiarraytest");
+    }
   }
 
   @Test
@@ -351,16 +461,16 @@ public class ArrayTest extends BaseTest4 {
 
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT intarr, decarr, strarr FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     Array arr = rs.getArray(1);
-    Assert.assertNull(arr);
+    assertNull(arr);
 
     arr = rs.getArray(2);
-    Assert.assertNull(arr);
+    assertNull(arr);
 
     arr = rs.getArray(3);
-    Assert.assertNull(arr);
+    assertNull(arr);
 
     rs.close();
   }
@@ -374,29 +484,29 @@ public class ArrayTest extends BaseTest4 {
         + TestUtil.escapeString(conn, "{abc,f'a,\"fa\\\"b\",def, un  quot\u000B \u2001 \r}") + "')");
 
     ResultSet rs = stmt.executeQuery("SELECT intarr, decarr, strarr FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     Array arr = rs.getArray(1);
-    Assert.assertEquals(Types.INTEGER, arr.getBaseType());
+    assertEquals(Types.INTEGER, arr.getBaseType());
     Integer[] intarr = (Integer[]) arr.getArray();
-    Assert.assertEquals(3, intarr.length);
-    Assert.assertEquals(1, intarr[0].intValue());
-    Assert.assertEquals(2, intarr[1].intValue());
-    Assert.assertEquals(3, intarr[2].intValue());
+    assertEquals(3, intarr.length);
+    assertEquals(1, intarr[0].intValue());
+    assertEquals(2, intarr[1].intValue());
+    assertEquals(3, intarr[2].intValue());
 
     arr = rs.getArray(2);
-    Assert.assertEquals(Types.NUMERIC, arr.getBaseType());
+    assertEquals(Types.NUMERIC, arr.getBaseType());
     BigDecimal[] decarr = (BigDecimal[]) arr.getArray();
-    Assert.assertEquals(2, decarr.length);
-    Assert.assertEquals(new BigDecimal("3.1"), decarr[0]);
-    Assert.assertEquals(new BigDecimal("1.4"), decarr[1]);
+    assertEquals(2, decarr.length);
+    assertEquals(new BigDecimal("3.1"), decarr[0]);
+    assertEquals(new BigDecimal("1.4"), decarr[1]);
 
     arr = rs.getArray(3);
-    Assert.assertEquals(Types.VARCHAR, arr.getBaseType());
+    assertEquals(Types.VARCHAR, arr.getBaseType());
     String[] strarr = (String[]) arr.getArray(2, 2);
-    Assert.assertEquals(2, strarr.length);
-    Assert.assertEquals("f'a", strarr[0]);
-    Assert.assertEquals("fa\"b", strarr[1]);
+    assertEquals(2, strarr.length);
+    assertEquals("f'a", strarr[0]);
+    assertEquals("fa\"b", strarr[1]);
 
     strarr = (String[]) arr.getArray();
     assertEquals(5, strarr.length);
@@ -416,53 +526,169 @@ public class ArrayTest extends BaseTest4 {
         + TestUtil.escapeString(conn, "{\"a\u2001b\",f'a,\"fa\\\"b\",def}") + "')");
 
     ResultSet rs = stmt.executeQuery("SELECT intarr, decarr, strarr FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     Array arr = rs.getArray(1);
-    Assert.assertEquals(Types.INTEGER, arr.getBaseType());
+    assertEquals(Types.INTEGER, arr.getBaseType());
     ResultSet arrrs = arr.getResultSet();
-    Assert.assertTrue(arrrs.next());
-    Assert.assertEquals(1, arrrs.getInt(1));
-    Assert.assertEquals(1, arrrs.getInt(2));
-    Assert.assertTrue(arrrs.next());
-    Assert.assertEquals(2, arrrs.getInt(1));
-    Assert.assertEquals(2, arrrs.getInt(2));
-    Assert.assertTrue(arrrs.next());
-    Assert.assertEquals(3, arrrs.getInt(1));
-    Assert.assertEquals(3, arrrs.getInt(2));
-    Assert.assertTrue(!arrrs.next());
-    Assert.assertTrue(arrrs.previous());
-    Assert.assertEquals(3, arrrs.getInt(2));
+    assertTrue(arrrs.next());
+    assertEquals(1, arrrs.getInt(1));
+    assertEquals(1, arrrs.getInt(2));
+    assertTrue(arrrs.next());
+    assertEquals(2, arrrs.getInt(1));
+    assertEquals(2, arrrs.getInt(2));
+    assertTrue(arrrs.next());
+    assertEquals(3, arrrs.getInt(1));
+    assertEquals(3, arrrs.getInt(2));
+    assertFalse(arrrs.next());
+    assertTrue(arrrs.previous());
+    assertEquals(3, arrrs.getInt(2));
     arrrs.first();
-    Assert.assertEquals(1, arrrs.getInt(2));
+    assertEquals(1, arrrs.getInt(2));
     arrrs.close();
 
     arr = rs.getArray(2);
-    Assert.assertEquals(Types.NUMERIC, arr.getBaseType());
+    assertEquals(Types.NUMERIC, arr.getBaseType());
     arrrs = arr.getResultSet();
-    Assert.assertTrue(arrrs.next());
-    Assert.assertEquals(new BigDecimal("3.1"), arrrs.getBigDecimal(2));
-    Assert.assertTrue(arrrs.next());
-    Assert.assertEquals(new BigDecimal("1.4"), arrrs.getBigDecimal(2));
+    assertTrue(arrrs.next());
+    assertEquals(new BigDecimal("3.1"), arrrs.getBigDecimal(2));
+    assertTrue(arrrs.next());
+    assertEquals(new BigDecimal("1.4"), arrrs.getBigDecimal(2));
     arrrs.close();
 
     arr = rs.getArray(3);
-    Assert.assertEquals(Types.VARCHAR, arr.getBaseType());
+    assertEquals(Types.VARCHAR, arr.getBaseType());
     arrrs = arr.getResultSet(2, 2);
-    Assert.assertTrue(arrrs.next());
-    Assert.assertEquals(2, arrrs.getInt(1));
-    Assert.assertEquals("f'a", arrrs.getString(2));
-    Assert.assertTrue(arrrs.next());
-    Assert.assertEquals(3, arrrs.getInt(1));
-    Assert.assertEquals("fa\"b", arrrs.getString(2));
-    Assert.assertTrue(!arrrs.next());
+    assertTrue(arrrs.next());
+    assertEquals(2, arrrs.getInt(1));
+    assertEquals("f'a", arrrs.getString(2));
+    assertTrue(arrrs.next());
+    assertEquals(3, arrrs.getInt(1));
+    assertEquals("fa\"b", arrrs.getString(2));
+    assertFalse(arrrs.next());
     arrrs.close();
 
     arrrs = arr.getResultSet(1, 1);
-    Assert.assertTrue(arrrs.next());
-    Assert.assertEquals(1, arrrs.getInt(1));
-    Assert.assertEquals(stringWithNonAsciiWhiteSpace, arrrs.getString(2));
-    Assert.assertFalse(arrrs.next());
+    assertTrue(arrrs.next());
+    assertEquals(1, arrrs.getInt(1));
+    assertEquals(stringWithNonAsciiWhiteSpace, arrrs.getString(2));
+    assertFalse(arrrs.next());
+    arrrs.close();
+
+    rs.close();
+    stmt.close();
+  }
+
+  @Test
+  public void testMultiDimensionalArrayRetrieveResultSets() throws SQLException {
+    final int[][][] origIntArray = new int[3][2][1];
+    int i = 0;
+    for (int x = 0; x < 3; x++) {
+      for (int y = 0; y < 2; y++) {
+        for (int z = 0; z < 1; z++) {
+          origIntArray[x][y][z] = i;
+          i++;
+        }
+      }
+    }
+
+    PreparedStatement pstmt = conn.prepareStatement("INSERT INTO arrtest(intarr) VALUES (?)");
+    pstmt.setObject(1, origIntArray, Types.ARRAY);
+    pstmt.executeUpdate();
+    pstmt.close();
+
+    Statement stmt = conn.createStatement();
+    ResultSet rs = stmt.executeQuery("SELECT intarr FROM arrtest");
+    assertTrue(rs.next());
+
+    // {{{0},{1}},{{2},{3}},{{4},{5}}}
+    Array arr = rs.getArray(1);
+    assertEquals(Types.INTEGER, arr.getBaseType());
+    ResultSet arrrs = arr.getResultSet();
+    assertTrue(arrrs.next());
+    // {{0},{1}}
+    assertEquals(1, arrrs.getInt(1));
+    Array arr1 =  arrrs.getArray(2);
+    ResultSet arr1rs = arr1.getResultSet();
+    assertTrue(arr1rs.next());
+    // {0}
+    assertEquals(1, arr1rs.getInt(1));
+    Array arr11 =  arr1rs.getArray(2);
+    ResultSet arr11rs = arr11.getResultSet();
+    assertTrue(arr11rs.next());
+    assertEquals(1, arr11rs.getInt(1));
+    assertEquals(0, arr11rs.getInt(2));
+    assertFalse(arr11rs.next());
+    arr11rs.close();
+    assertTrue(arr1rs.next());
+    // {1}
+    assertEquals(2, arr1rs.getInt(1));
+    Array arr12 =  arr1rs.getArray(2);
+    ResultSet arr12rs = arr12.getResultSet();
+    assertTrue(arr12rs.next());
+    assertEquals(1, arr12rs.getInt(1));
+    assertEquals(1, arr12rs.getInt(2));
+    assertFalse(arr12rs.next());
+    arr12rs.close();
+    assertFalse(arr1rs.next());
+    arr1rs.close();
+    assertTrue(arrrs.next());
+
+    // {{2},{3}}
+    assertEquals(2, arrrs.getInt(1));
+    Array arr2 =  arrrs.getArray(2);
+    ResultSet arr2rs = arr2.getResultSet();
+    assertTrue(arr2rs.next());
+    // {2}
+    assertEquals(1, arr2rs.getInt(1));
+    Array arr21 =  arr2rs.getArray(2);
+    ResultSet arr21rs = arr21.getResultSet();
+    assertTrue(arr21rs.next());
+    assertEquals(1, arr21rs.getInt(1));
+    assertEquals(2, arr21rs.getInt(2));
+    assertFalse(arr21rs.next());
+    arr21rs.close();
+    assertTrue(arr2rs.next());
+    // {3}
+    assertEquals(2, arr2rs.getInt(1));
+    Array arr22 =  arr2rs.getArray(2);
+    ResultSet arr22rs = arr22.getResultSet();
+    assertTrue(arr22rs.next());
+    assertEquals(1, arr22rs.getInt(1));
+    assertEquals(3, arr22rs.getInt(2));
+    assertFalse(arr22rs.next());
+    arr22rs.close();
+    assertFalse(arr2rs.next());
+    arr2rs.close();
+    assertTrue(arrrs.next());
+
+    // {{4},{5}}
+    assertEquals(3, arrrs.getInt(1));
+    Array arr3 =  arrrs.getArray(2);
+    ResultSet arr3rs = arr3.getResultSet();
+    assertTrue(arr3rs.next());
+    // {4}
+    assertEquals(1, arr3rs.getInt(1));
+    Array arr31 =  arr3rs.getArray(2);
+    ResultSet arr31rs = arr31.getResultSet();
+    assertTrue(arr31rs.next());
+    assertEquals(1, arr31rs.getInt(1));
+    assertEquals(4, arr31rs.getInt(2));
+    assertFalse(arr31rs.next());
+    arr31rs.close();
+    assertTrue(arr3rs.next());
+    // {5}
+    assertEquals(2, arr3rs.getInt(1));
+    Array arr32 =  arr3rs.getArray(2);
+    ResultSet arr32rs = arr32.getResultSet();
+    assertTrue(arr32rs.next());
+    assertEquals(1, arr32rs.getInt(1));
+    assertEquals(5, arr32rs.getInt(2));
+    assertFalse(arr32rs.next());
+    arr32rs.close();
+    assertFalse(arr3rs.next());
+    arr3rs.close();
+    assertFalse(arrrs.next());
     arrrs.close();
 
     rs.close();
@@ -473,7 +699,7 @@ public class ArrayTest extends BaseTest4 {
   public void testSetArray() throws SQLException {
     Statement stmt = conn.createStatement();
     ResultSet arrRS = stmt.executeQuery("SELECT '{1,2,3}'::int4[]");
-    Assert.assertTrue(arrRS.next());
+    assertTrue(arrRS.next());
     Array arr = arrRS.getArray(1);
     arrRS.close();
     stmt.close();
@@ -496,16 +722,16 @@ public class ArrayTest extends BaseTest4 {
     while (rs.next()) {
       resultCount++;
       Array result = rs.getArray(1);
-      Assert.assertEquals(Types.INTEGER, result.getBaseType());
-      Assert.assertEquals("int4", result.getBaseTypeName());
+      assertEquals(Types.INTEGER, result.getBaseType());
+      assertEquals("int4", result.getBaseTypeName());
 
       Integer[] intarr = (Integer[]) result.getArray();
-      Assert.assertEquals(3, intarr.length);
-      Assert.assertEquals(1, intarr[0].intValue());
-      Assert.assertEquals(2, intarr[1].intValue());
-      Assert.assertEquals(3, intarr[2].intValue());
+      assertEquals(3, intarr.length);
+      assertEquals(1, intarr[0].intValue());
+      assertEquals(2, intarr[1].intValue());
+      assertEquals(3, intarr[2].intValue());
     }
-    Assert.assertEquals(3, resultCount);
+    assertEquals(3, resultCount);
   }
 
   /**
@@ -519,12 +745,12 @@ public class ArrayTest extends BaseTest4 {
     stmt.executeUpdate("INSERT INTO arrtest (intarr) VALUES ('{1,2,3}')");
     stmt.executeUpdate("UPDATE arrtest SET intarr[0] = 0");
     ResultSet rs = stmt.executeQuery("SELECT intarr FROM arrtest");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Array result = rs.getArray(1);
     Integer[] intarr = (Integer[]) result.getArray();
-    Assert.assertEquals(4, intarr.length);
+    assertEquals(4, intarr.length);
     for (int i = 0; i < intarr.length; i++) {
-      Assert.assertEquals(i, intarr[i].intValue());
+      assertEquals(i, intarr[i].intValue());
     }
   }
 
@@ -532,18 +758,18 @@ public class ArrayTest extends BaseTest4 {
   public void testMultiDimensionalArray() throws SQLException {
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT '{{1,2},{3,4}}'::int[]");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Array arr = rs.getArray(1);
     Object[] oa = (Object[]) arr.getArray();
-    Assert.assertEquals(2, oa.length);
+    assertEquals(2, oa.length);
     Integer[] i0 = (Integer[]) oa[0];
-    Assert.assertEquals(2, i0.length);
-    Assert.assertEquals(1, i0[0].intValue());
-    Assert.assertEquals(2, i0[1].intValue());
+    assertEquals(2, i0.length);
+    assertEquals(1, i0[0].intValue());
+    assertEquals(2, i0[1].intValue());
     Integer[] i1 = (Integer[]) oa[1];
-    Assert.assertEquals(2, i1.length);
-    Assert.assertEquals(3, i1[0].intValue());
-    Assert.assertEquals(4, i1[1].intValue());
+    assertEquals(2, i1.length);
+    assertEquals(3, i1[0].intValue());
+    assertEquals(4, i1[1].intValue());
     rs.close();
     stmt.close();
   }
@@ -552,19 +778,19 @@ public class ArrayTest extends BaseTest4 {
   public void testNullValues() throws SQLException {
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT ARRAY[1,NULL,3]");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Array arr = rs.getArray(1);
     Integer[] i = (Integer[]) arr.getArray();
-    Assert.assertEquals(3, i.length);
-    Assert.assertEquals(1, i[0].intValue());
-    Assert.assertNull(i[1]);
-    Assert.assertEquals(3, i[2].intValue());
+    assertEquals(3, i.length);
+    assertEquals(1, i[0].intValue());
+    assertNull(i[1]);
+    assertEquals(3, i[2].intValue());
   }
 
   @Test
   public void testNullFieldString() throws SQLException {
     Array arr = new PgArray((BaseConnection) conn, 1, (String) null);
-    Assert.assertNull(arr.toString());
+    assertNull(arr.toString());
   }
 
   @Test
@@ -592,10 +818,10 @@ public class ArrayTest extends BaseTest4 {
       stmt.executeUpdate("INSERT INTO arrtest VALUES (NULL, NULL, '" + TestUtil.escapeString(conn, stringArray) + "')");
 
       final ResultSet rs = stmt.executeQuery("SELECT strarr FROM arrtest");
-      Assert.assertTrue(rs.next());
+      assertTrue(rs.next());
 
       Array arr = rs.getArray(1);
-      Assert.assertEquals(Types.VARCHAR, arr.getBaseType());
+      assertEquals(Types.VARCHAR, arr.getBaseType());
       String[] strarr = (String[]) arr.getArray();
       assertEquals(5, strarr.length);
       assertEquals("f'a", strarr[0]);
@@ -630,54 +856,54 @@ public class ArrayTest extends BaseTest4 {
     ResultSet rs =
         stmt.executeQuery("SELECT relacl FROM pg_class WHERE relacl IS NOT NULL LIMIT 1");
     ResultSetMetaData rsmd = rs.getMetaData();
-    Assert.assertEquals(Types.ARRAY, rsmd.getColumnType(1));
+    assertEquals(Types.ARRAY, rsmd.getColumnType(1));
 
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Array arr = rs.getArray(1);
-    Assert.assertEquals("aclitem", arr.getBaseTypeName());
+    assertEquals("aclitem", arr.getBaseTypeName());
 
     ResultSet arrRS = arr.getResultSet();
     ResultSetMetaData arrRSMD = arrRS.getMetaData();
-    Assert.assertEquals("aclitem", arrRSMD.getColumnTypeName(2));
+    assertEquals("aclitem", arrRSMD.getColumnTypeName(2));
   }
 
   @Test
   public void testRecursiveResultSets() throws SQLException {
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT '{{1,2},{3,4}}'::int[]");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Array arr = rs.getArray(1);
 
     ResultSet arrRS = arr.getResultSet();
     ResultSetMetaData arrRSMD = arrRS.getMetaData();
-    Assert.assertEquals(Types.ARRAY, arrRSMD.getColumnType(2));
-    Assert.assertEquals("_int4", arrRSMD.getColumnTypeName(2));
+    assertEquals(Types.ARRAY, arrRSMD.getColumnType(2));
+    assertEquals("_int4", arrRSMD.getColumnTypeName(2));
 
-    Assert.assertTrue(arrRS.next());
-    Assert.assertEquals(1, arrRS.getInt(1));
+    assertTrue(arrRS.next());
+    assertEquals(1, arrRS.getInt(1));
     Array a1 = arrRS.getArray(2);
     ResultSet a1RS = a1.getResultSet();
     ResultSetMetaData a1RSMD = a1RS.getMetaData();
-    Assert.assertEquals(Types.INTEGER, a1RSMD.getColumnType(2));
-    Assert.assertEquals("int4", a1RSMD.getColumnTypeName(2));
+    assertEquals(Types.INTEGER, a1RSMD.getColumnType(2));
+    assertEquals("int4", a1RSMD.getColumnTypeName(2));
 
-    Assert.assertTrue(a1RS.next());
-    Assert.assertEquals(1, a1RS.getInt(2));
-    Assert.assertTrue(a1RS.next());
-    Assert.assertEquals(2, a1RS.getInt(2));
-    Assert.assertTrue(!a1RS.next());
+    assertTrue(a1RS.next());
+    assertEquals(1, a1RS.getInt(2));
+    assertTrue(a1RS.next());
+    assertEquals(2, a1RS.getInt(2));
+    assertFalse(a1RS.next());
     a1RS.close();
 
-    Assert.assertTrue(arrRS.next());
-    Assert.assertEquals(2, arrRS.getInt(1));
+    assertTrue(arrRS.next());
+    assertEquals(2, arrRS.getInt(1));
     Array a2 = arrRS.getArray(2);
     ResultSet a2RS = a2.getResultSet();
 
-    Assert.assertTrue(a2RS.next());
-    Assert.assertEquals(3, a2RS.getInt(2));
-    Assert.assertTrue(a2RS.next());
-    Assert.assertEquals(4, a2RS.getInt(2));
-    Assert.assertTrue(!a2RS.next());
+    assertTrue(a2RS.next());
+    assertEquals(3, a2RS.getInt(2));
+    assertTrue(a2RS.next());
+    assertEquals(4, a2RS.getInt(2));
+    assertFalse(a2RS.next());
     a2RS.close();
 
     arrRS.close();
@@ -689,13 +915,13 @@ public class ArrayTest extends BaseTest4 {
   public void testNullString() throws SQLException {
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT '{a,NULL}'::text[]");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Array arr = rs.getArray(1);
 
     String[] s = (String[]) arr.getArray();
-    Assert.assertEquals(2, s.length);
-    Assert.assertEquals("a", s[0]);
-    Assert.assertNull(s[1]);
+    assertEquals(2, s.length);
+    assertEquals("a", s[0]);
+    assertNull(s[1]);
   }
 
   @Test
@@ -707,41 +933,41 @@ public class ArrayTest extends BaseTest4 {
     sql += "'{{c\\\\\"d, ''}, {\"\\\\\\\\\",\"''\"}}'::text[]";
 
     ResultSet rs = stmt.executeQuery(sql);
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
 
     Array arr = rs.getArray(1);
     String[][] s = (String[][]) arr.getArray();
-    Assert.assertEquals("c\"d", s[0][0]);
-    Assert.assertEquals("'", s[0][1]);
-    Assert.assertEquals("\\", s[1][0]);
-    Assert.assertEquals("'", s[1][1]);
+    assertEquals("c\"d", s[0][0]);
+    assertEquals("'", s[0][1]);
+    assertEquals("\\", s[1][0]);
+    assertEquals("'", s[1][1]);
 
     ResultSet arrRS = arr.getResultSet();
 
-    Assert.assertTrue(arrRS.next());
+    assertTrue(arrRS.next());
     Array a1 = arrRS.getArray(2);
     ResultSet rs1 = a1.getResultSet();
-    Assert.assertTrue(rs1.next());
-    Assert.assertEquals("c\"d", rs1.getString(2));
-    Assert.assertTrue(rs1.next());
-    Assert.assertEquals("'", rs1.getString(2));
-    Assert.assertTrue(!rs1.next());
+    assertTrue(rs1.next());
+    assertEquals("c\"d", rs1.getString(2));
+    assertTrue(rs1.next());
+    assertEquals("'", rs1.getString(2));
+    assertFalse(rs1.next());
 
-    Assert.assertTrue(arrRS.next());
+    assertTrue(arrRS.next());
     Array a2 = arrRS.getArray(2);
     ResultSet rs2 = a2.getResultSet();
-    Assert.assertTrue(rs2.next());
-    Assert.assertEquals("\\", rs2.getString(2));
-    Assert.assertTrue(rs2.next());
-    Assert.assertEquals("'", rs2.getString(2));
-    Assert.assertTrue(!rs2.next());
+    assertTrue(rs2.next());
+    assertEquals("\\", rs2.getString(2));
+    assertTrue(rs2.next());
+    assertEquals("'", rs2.getString(2));
+    assertFalse(rs2.next());
   }
 
   @Test
   public void testWriteMultiDimensional() throws SQLException {
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT '{{1,2},{3,4}}'::int[]");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Array arr = rs.getArray(1);
     rs.close();
     stmt.close();
@@ -753,14 +979,14 @@ public class ArrayTest extends BaseTest4 {
     PreparedStatement pstmt = conn.prepareStatement(sql);
     pstmt.setArray(1, arr);
     rs = pstmt.executeQuery();
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     arr = rs.getArray(1);
 
     Integer[][] i = (Integer[][]) arr.getArray();
-    Assert.assertEquals(1, i[0][0].intValue());
-    Assert.assertEquals(2, i[0][1].intValue());
-    Assert.assertEquals(3, i[1][0].intValue());
-    Assert.assertEquals(4, i[1][1].intValue());
+    assertEquals(1, i[0][0].intValue());
+    assertEquals(2, i[0][1].intValue());
+    assertEquals(3, i[1][0].intValue());
+    assertEquals(4, i[1][1].intValue());
   }
 
   /*
@@ -771,24 +997,24 @@ public class ArrayTest extends BaseTest4 {
   public void testNonStandardDelimiter() throws SQLException {
     Statement stmt = conn.createStatement();
     ResultSet rs = stmt.executeQuery("SELECT '{(3,4),(1,2);(7,8),(5,6)}'::box[]");
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Array arr = rs.getArray(1);
 
     ResultSet arrRS = arr.getResultSet();
 
-    Assert.assertTrue(arrRS.next());
+    assertTrue(arrRS.next());
     PGbox box1 = (PGbox) arrRS.getObject(2);
     PGpoint p1 = box1.point[0];
-    Assert.assertEquals(3, p1.x, 0.001);
-    Assert.assertEquals(4, p1.y, 0.001);
+    assertEquals(3, p1.x, 0.001);
+    assertEquals(4, p1.y, 0.001);
 
-    Assert.assertTrue(arrRS.next());
+    assertTrue(arrRS.next());
     PGbox box2 = (PGbox) arrRS.getObject(2);
     PGpoint p2 = box2.point[1];
-    Assert.assertEquals(5, p2.x, 0.001);
-    Assert.assertEquals(6, p2.y, 0.001);
+    assertEquals(5, p2.x, 0.001);
+    assertEquals(6, p2.y, 0.001);
 
-    Assert.assertTrue(!arrRS.next());
+    assertFalse(arrRS.next());
   }
 
   @Test
@@ -800,8 +1026,10 @@ public class ArrayTest extends BaseTest4 {
       Array array = rs.getArray(1);
       if (!rs.wasNull()) {
         ResultSet ars = array.getResultSet();
-        Assert.assertEquals("get columntype should return Types.INTEGER", java.sql.Types.INTEGER,
-            ars.getMetaData().getColumnType(1));
+        assertEquals(
+            Types.INTEGER,
+            ars.getMetaData().getColumnType(1),
+            "get columntype should return Types.INTEGER");
       }
     }
   }

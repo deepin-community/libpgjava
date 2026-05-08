@@ -5,15 +5,20 @@
 
 package org.postgresql.test.jdbc2;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import org.postgresql.PGProperty;
+import org.postgresql.jdbc.PreferQueryMode;
 import org.postgresql.test.TestUtil;
 
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.sql.BatchUpdateException;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -22,7 +27,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Properties;
 
-@RunWith(Parameterized.class)
+@ParameterizedClass
+@MethodSource("data")
 public class BatchedInsertReWriteEnabledTest extends BaseTest4 {
   private final AutoCommit autoCommit;
 
@@ -32,9 +38,8 @@ public class BatchedInsertReWriteEnabledTest extends BaseTest4 {
     setBinaryMode(binaryMode);
   }
 
-  @Parameterized.Parameters(name = "{index}: autoCommit={0}, binary={1}")
   public static Iterable<Object[]> data() {
-    Collection<Object[]> ids = new ArrayList<Object[]>();
+    Collection<Object[]> ids = new ArrayList<>();
     for (AutoCommit autoCommit : AutoCommit.values()) {
       for (BinaryMode binaryMode : BinaryMode.values()) {
         ids.add(new Object[]{autoCommit, binaryMode});
@@ -43,18 +48,26 @@ public class BatchedInsertReWriteEnabledTest extends BaseTest4 {
     return ids;
   }
 
+  @BeforeAll
+  static void createTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.createTable(con, "testbatch", "pk INTEGER, col1 VARCHAR, col2 INTEGER");
+    }
+  }
+
+  @AfterAll
+  static void dropTables() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      TestUtil.dropTable(con, "testbatch");
+    }
+  }
+
   /* Set up the fixture for this testcase: a connection to a database with
   a table for this test. */
   public void setUp() throws Exception {
     super.setUp();
-    TestUtil.createTable(con, "testbatch", "pk INTEGER, col1 VARCHAR, col2 INTEGER");
+    TestUtil.execute(con, "TRUNCATE testbatch");
     con.setAutoCommit(autoCommit == AutoCommit.YES);
-  }
-
-  // Tear down the fixture for this test case.
-  public void tearDown() throws SQLException {
-    TestUtil.dropTable(con, "testbatch");
-    super.tearDown();
   }
 
   @Override
@@ -195,7 +208,7 @@ public class BatchedInsertReWriteEnabledTest extends BaseTest4 {
       clean.execute();
       clean.close();
 
-      pstmt = con.prepareStatement("INSERT INTO testbatch " +  values + "(?,?,?)" + suffix);
+      pstmt = con.prepareStatement("INSERT INTO testbatch " + values + "(?,?,?)" + suffix);
       pstmt.setInt(1, 1);
       pstmt.setString(2, "a");
       pstmt.setInt(3, 2);
@@ -376,23 +389,29 @@ public class BatchedInsertReWriteEnabledTest extends BaseTest4 {
       stmt = con.createStatement();
       stmt.addBatch("INSERT INTO testbatch VALUES (100,'a',200);");
       stmt.addBatch("INSERT INTO testbatch VALUES (300,'b',400);");
-      Assert.assertEquals(
+      assertEquals(
+          Arrays.toString(new int[]{1, 1}),
+          Arrays.toString(stmt.executeBatch()),
           "Expected outcome not returned by batch execution. The driver"
-              + " allowed re-write in combination with plain statements.",
-          Arrays.toString(new int[]{1, 1}), Arrays.toString(stmt.executeBatch()));
+              + " allowed re-write in combination with plain statements.");
     } finally {
       TestUtil.closeQuietly(stmt);
     }
   }
 
   @Test
-  public void test32000Binds() throws Exception {
-    testNBinds(32000);
+  public void test32767Binds() throws Exception {
+    testNBinds(32767);
   }
 
   @Test
-  public void test17000Binds() throws Exception {
-    testNBinds(17000);
+  public void test32768Binds() throws Exception {
+    testNBinds(32768);
+  }
+
+  @Test
+  public void test65535Binds() throws Exception {
+    testNBinds(65535);
   }
 
   public void testNBinds(int nBinds) throws Exception {
@@ -411,11 +430,20 @@ public class BatchedInsertReWriteEnabledTest extends BaseTest4 {
         }
         pstmt.addBatch();
       }
-      Assert.assertEquals(
-          "Statement with " + nBinds
-              + " binds should not be batched => two executions with exactly one row inserted each",
-          Arrays.toString(new int[] { 1, 1 }),
-          Arrays.toString(pstmt.executeBatch()));
+      if (nBinds * 2 <= 65535 || preferQueryMode == PreferQueryMode.SIMPLE) {
+        assertEquals(
+            Arrays.toString(new int[]{Statement.SUCCESS_NO_INFO, Statement.SUCCESS_NO_INFO}),
+            Arrays.toString(pstmt.executeBatch()),
+            () -> "Insert with " + nBinds + " binds should be rewritten into multi-value insert"
+                + ", so expecting Statement.SUCCESS_NO_INFO == -2");
+      } else {
+        assertEquals(
+            Arrays.toString(new int[]{1, 1}),
+            Arrays.toString(pstmt.executeBatch()),
+            () -> "Insert with " + nBinds + " binds can't be rewritten into multi-value insert"
+                + " since write format allows 65535 binds maximum"
+                + ", so expecting batch to be executed as individual statements");
+      }
     } catch (BatchUpdateException be) {
       SQLException e = be;
       while (true) {

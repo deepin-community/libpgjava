@@ -20,7 +20,7 @@ public class LogicalStreamBuilder extends AbstractStreamBuilder<ChainedLogicalSt
     implements ChainedLogicalStreamBuilder, LogicalReplicationOptions {
   private final Properties slotOptions;
 
-  private StartLogicalReplicationCallback startCallback;
+  private final StartLogicalReplicationCallback startCallback;
 
   /**
    * @param startCallback not null callback that should be execute after build parameters for start
@@ -91,5 +91,10 @@ public class LogicalStreamBuilder extends AbstractStreamBuilder<ChainedLogicalSt
   @Override
   public int getStatusInterval() {
     return statusIntervalMs;
+  }
+
+  @Override
+  public boolean getAutomaticFlush() {
+    return automaticFlush;
   }
 }

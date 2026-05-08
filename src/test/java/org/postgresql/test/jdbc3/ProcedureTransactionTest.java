@@ -5,9 +5,10 @@
 
 package org.postgresql.test.jdbc3;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import org.postgresql.PGProperty;
 import org.postgresql.core.ServerVersion;
@@ -16,15 +17,23 @@ import org.postgresql.test.TestUtil;
 import org.postgresql.test.jdbc2.BaseTest4;
 import org.postgresql.util.PSQLState;
 
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.sql.CallableStatement;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
 
 public class ProcedureTransactionTest extends BaseTest4 {
+  @BeforeAll
+  public static void beforeClass() throws Exception {
+    try (Connection con = TestUtil.openDB()) {
+      assumeCallableStatementsSupported(con);
+    }
+  }
 
   @Override
   protected void updateProperties(Properties props) {
@@ -63,7 +72,6 @@ public class ProcedureTransactionTest extends BaseTest4 {
   @Test
   public void testProcWithNoTxnControl() throws SQLException {
     assumeMinimumServerVersion(ServerVersion.v11);
-    assumeCallableStatementsSupported();
     CallableStatement cs = con.prepareCall("call mynotxnproc(?)");
     int val = 1;
     cs.setInt(1, val);
@@ -75,7 +83,7 @@ public class ProcedureTransactionTest extends BaseTest4 {
     ResultSet rs = cs.executeQuery();
 
     assertTrue(rs.next());
-    assertTrue(rs.getInt(1) == val);
+    assertEquals(val, rs.getInt(1));
 
     TestUtil.closeQuietly(rs);
     TestUtil.closeQuietly(cs);
@@ -84,7 +92,6 @@ public class ProcedureTransactionTest extends BaseTest4 {
   @Test
   public void testProcWithCommitInside() throws SQLException {
     assumeMinimumServerVersion(ServerVersion.v11);
-    assumeCallableStatementsSupported();
     CallableStatement cs = con.prepareCall("call mycommitproc(?)");
     int val = 2;
     cs.setInt(1, val);
@@ -96,7 +103,7 @@ public class ProcedureTransactionTest extends BaseTest4 {
     ResultSet rs = cs.executeQuery();
 
     assertTrue(rs.next());
-    assertTrue(rs.getInt(1) == val);
+    assertEquals(val, rs.getInt(1));
 
     TestUtil.closeQuietly(rs);
     TestUtil.closeQuietly(cs);
@@ -105,7 +112,6 @@ public class ProcedureTransactionTest extends BaseTest4 {
   @Test
   public void testProcWithRollbackInside() throws SQLException {
     assumeMinimumServerVersion(ServerVersion.v11);
-    assumeCallableStatementsSupported();
     CallableStatement cs = con.prepareCall("call myrollbackproc(?)");
     int val = 3;
     cs.setInt(1, val);
@@ -148,7 +154,6 @@ public class ProcedureTransactionTest extends BaseTest4 {
 
   private void testProcAutoCommit() throws SQLException {
     assumeMinimumServerVersion(ServerVersion.v11);
-    assumeCallableStatementsSupported();
     CallableStatement cs = con.prepareCall("call mycommitproc(?)");
     int val = 4;
     cs.setInt(1, val);
@@ -160,7 +165,7 @@ public class ProcedureTransactionTest extends BaseTest4 {
     ResultSet rs = cs.executeQuery();
 
     assertTrue(rs.next());
-    assertTrue(rs.getInt(1) == val);
+    assertEquals(val, rs.getInt(1));
 
     TestUtil.closeQuietly(rs);
     TestUtil.closeQuietly(cs);

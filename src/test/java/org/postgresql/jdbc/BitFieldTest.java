@@ -5,14 +5,15 @@
 
 package org.postgresql.jdbc;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import org.postgresql.test.TestUtil;
 import org.postgresql.test.jdbc2.BaseTest4;
 import org.postgresql.util.PGobject;
 
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -25,11 +26,13 @@ public class BitFieldTest extends BaseTest4 {
     private final String bitValue;
     private final String tableName;
     private final String tableFields;
+    private final boolean isVarBit;
 
-    TestData(String bitValue, String tableName, String tableFields) {
+    TestData(String bitValue, String tableName, String tableFields, boolean isVarBit) {
       this.bitValue = bitValue;
       this.tableName = tableName;
       this.tableFields = tableFields;
+      this.isVarBit = isVarBit;
     }
 
     public String getBitValue() {
@@ -43,21 +46,28 @@ public class BitFieldTest extends BaseTest4 {
     public String getTableFields() {
       return tableFields;
     }
+
+    public boolean getIsVarBit() {
+      return isVarBit;
+    }
   }
 
   private static final String fieldName = "field_bit";
   public static final String testBitValue = "0101010100101010101010100101";
   private static final TestData[] testBitValues = new TestData[]{
-      new TestData("0", "test_bit_field_0a", fieldName + " bit"),
-      new TestData("0", "test_bit_field_0b", fieldName + " bit(1)"),
-      new TestData("1", "test_bit_field_1a", fieldName + " bit"),
-      new TestData("1", "test_bit_field_1b", fieldName + " bit(1)"),
+      new TestData("0", "test_bit_field_0a", fieldName + " bit", false),
+      new TestData("0", "test_bit_field_0b", fieldName + " bit(1)", false),
+      new TestData("1", "test_bit_field_1a", fieldName + " bit", false),
+      new TestData("1", "test_bit_field_1b", fieldName + " bit(1)", false),
       new TestData(testBitValue, "test_bit_field_gt1_1", String.format("%s bit(%d)", fieldName,
-          testBitValue.length()))
+          testBitValue.length()), false),
+      new TestData(testBitValue, "test_varbit_field_gt1_1", String.format("%s varbit(%d)", fieldName,
+          testBitValue.length()), true),
+      new TestData("1", "test_varbit_field_1", String.format("%s varbit(1)", fieldName), true),
+      new TestData("0", "test_varbit_field_0", String.format("%s varbit(1)", fieldName), true)
   };
 
   @Override
-  @Before
   public void setUp() throws Exception {
     super.setUp();
     con = TestUtil.openDB();
@@ -69,7 +79,7 @@ public class BitFieldTest extends BaseTest4 {
     }
   }
 
-  @After
+  @Override
   public void tearDown() throws SQLException {
     Statement stmt = con.createStatement();
     for (TestData testData : testBitValues) {
@@ -85,7 +95,7 @@ public class BitFieldTest extends BaseTest4 {
     for (TestData testData : testBitValues) {
       PreparedStatement pstmt = con.prepareStatement(String.format("SELECT field_bit FROM %s "
           + "limit 1", testData.getTableName()));
-      checkBitFieldValue(pstmt, testData.getBitValue());
+      checkBitFieldValue(pstmt, testData.getBitValue(), testData.getIsVarBit());
       pstmt.close();
     }
   }
@@ -98,27 +108,27 @@ public class BitFieldTest extends BaseTest4 {
               + "field_bit = ?");
       PGobject param = new PGobject();
       param.setValue(testData.getBitValue());
-      param.setType("bit");
+      param.setType(testData.getIsVarBit() ? "varbit" : "bit");
       pstmt.setObject(1, param);
-      checkBitFieldValue(pstmt, testData.getBitValue());
+      checkBitFieldValue(pstmt, testData.getBitValue(), testData.getIsVarBit());
       pstmt.close();
     }
   }
 
-  private void checkBitFieldValue(PreparedStatement pstmt, String bitValue) throws SQLException {
+  private static void checkBitFieldValue(PreparedStatement pstmt, String bitValue, boolean isVarBit) throws SQLException {
     ResultSet rs = pstmt.executeQuery();
-    Assert.assertTrue(rs.next());
+    assertTrue(rs.next());
     Object o = rs.getObject(1);
-    if (bitValue.length() == 1) {
-      Assert.assertTrue("Failed for " + bitValue, o instanceof java.lang.Boolean);
+    if (bitValue.length() == 1 && !isVarBit) {
+      assertInstanceOf(Boolean.class, o, "Failed for " + bitValue);
       Boolean b = (Boolean) o;
-      Assert.assertEquals("Failed for " + bitValue, bitValue.charAt(0) == '1', b);
+      assertEquals(bitValue.charAt(0) == '1', b, "Failed for " + bitValue);
     } else {
-      Assert.assertTrue("Failed for " + bitValue, o instanceof PGobject);
+      assertInstanceOf(PGobject.class, o, "Failed for " + bitValue);
       PGobject pGobject = (PGobject) o;
-      Assert.assertEquals("Failed for " + bitValue, bitValue, pGobject.getValue());
+      assertEquals(bitValue, pGobject.getValue(), "Failed for " + bitValue);
     }
     String s = rs.getString(1);
-    Assert.assertEquals(bitValue, s);
+    assertEquals(bitValue, s);
   }
 }

@@ -6,10 +6,10 @@
 package org.postgresql.ssl;
 
 import org.postgresql.util.GT;
+import org.postgresql.util.internal.FileUtils;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -26,10 +26,10 @@ import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 
 /**
- * <p>Provides a SSLSocketFactory that authenticates the remote server against an explicit pre-shared
+ * Provides a SSLSocketFactory that authenticates the remote server against an explicit pre-shared
  * SSL certificate. This is more secure than using the NonValidatingFactory as it prevents "man in
  * the middle" attacks. It is also more secure than relying on a central CA signing your server's
- * certificate as it pins the server's certificate.</p>
+ * certificate as it pins the server's certificate.
  *
  * <p>This class requires a single String parameter specified by setting the connection property
  * <code>sslfactoryarg</code>. The value of this property is the PEM-encoded remote server's SSL
@@ -88,14 +88,14 @@ public class SingleCertValidatingFactory extends WrappedFactory {
   private static final String SYS_PROP_PREFIX = "sys:";
 
   public SingleCertValidatingFactory(String sslFactoryArg) throws GeneralSecurityException {
-    if (sslFactoryArg == null || sslFactoryArg.equals("")) {
+    if (sslFactoryArg == null || "".equals(sslFactoryArg)) {
       throw new GeneralSecurityException(GT.tr("The sslfactoryarg property may not be empty."));
     }
     InputStream in = null;
     try {
       if (sslFactoryArg.startsWith(FILE_PREFIX)) {
         String path = sslFactoryArg.substring(FILE_PREFIX.length());
-        in = new BufferedInputStream(new FileInputStream(path));
+        in = FileUtils.newBufferedInputStream(path);
       } else if (sslFactoryArg.startsWith(CLASSPATH_PREFIX)) {
         String path = sslFactoryArg.substring(CLASSPATH_PREFIX.length());
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
@@ -187,15 +187,18 @@ public class SingleCertValidatingFactory extends WrappedFactory {
       }
     }
 
+    @Override
     public void checkClientTrusted(X509Certificate[] chain, String authType)
         throws CertificateException {
     }
 
+    @Override
     public void checkServerTrusted(X509Certificate[] chain, String authType)
         throws CertificateException {
       trustManager.checkServerTrusted(chain, authType);
     }
 
+    @Override
     public X509Certificate[] getAcceptedIssuers() {
       return new X509Certificate[]{cert};
     }

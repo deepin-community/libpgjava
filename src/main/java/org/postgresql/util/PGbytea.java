@@ -5,8 +5,15 @@
 
 package org.postgresql.util;
 
+import org.postgresql.core.FixedLengthOutputStream;
+import org.postgresql.core.v3.SqlSerializationContext;
+
 // import org.checkerframework.checker.nullness.qual.PolyNull;
 
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.sql.SQLException;
 
 /**
@@ -22,10 +29,10 @@ public class PGbytea {
   private static final int[] HEX_VALS = new int['f' + 1 - '0'];
 
   static {
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 10; i++) {
       HEX_VALS[i] = (byte) i;
     }
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 6; i++) {
       HEX_VALS['A' + i - '0'] = (byte) (10 + i);
       HEX_VALS['a' + i - '0'] = (byte) (10 + i);
     }
@@ -75,7 +82,7 @@ public class PGbytea {
       // count backslash escapes, they will be either
       // backslashes or an octal escape \\ or \003
       //
-      for (int i = 0; i < slength; ++i) {
+      for (int i = 0; i < slength; i++) {
         byte current = s[i];
         if (current == '\\') {
           byte next = s[++i];
@@ -128,32 +135,124 @@ public class PGbytea {
     if (buf == null) {
       return null;
     }
-    StringBuilder stringBuilder = new StringBuilder(2 * buf.length);
-    for (byte element : buf) {
-      int elementAsInt = (int) element;
-      if (elementAsInt < 0) {
-        elementAsInt = 256 + elementAsInt;
-      }
-      // we escape the same non-printable characters as the backend
-      // we must escape all 8bit characters otherwise when convering
-      // from java unicode to the db character set we may end up with
-      // question marks if the character set is SQL_ASCII
-      if (elementAsInt < 040 || elementAsInt > 0176) {
-        // escape charcter with the form \000, but need two \\ because of
-        // the Java parser
-        stringBuilder.append("\\");
-        stringBuilder.append((char) (((elementAsInt >> 6) & 0x3) + 48));
-        stringBuilder.append((char) (((elementAsInt >> 3) & 0x7) + 48));
-        stringBuilder.append((char) ((elementAsInt & 0x07) + 48));
-      } else if (element == (byte) '\\') {
-        // escape the backslash character as \\, but need four \\\\ because
-        // of the Java parser
-        stringBuilder.append("\\\\");
-      } else {
-        // other characters are left alone
-        stringBuilder.append((char) element);
-      }
-    }
+    StringBuilder stringBuilder = new StringBuilder(2 + 2 * buf.length);
+    stringBuilder.append("\\x");
+    appendHexString(stringBuilder, buf, 0, buf.length);
     return stringBuilder.toString();
+  }
+
+  /**
+   * Appends given byte array as hex string.
+   * See HexEncodingBenchmark for the benchmark.
+   * @param sb output builder
+   * @param buf buffer to append
+   * @param offset offset within the buffer
+   * @param length the length of sequence to append
+   */
+  public static void appendHexString(StringBuilder sb, byte[] buf, int offset, int length) {
+    for (int i = offset; i < offset + length; i++) {
+      byte element = buf[i];
+      sb.append(Character.forDigit((element >> 4) & 0xf, 16));
+      sb.append(Character.forDigit(element & 0xf, 16));
+    }
+  }
+
+  /**
+   * Formats input object as {@code bytea} literal like {@code '\xcafebabe'::bytea}.
+   * The following inputs are supported: {@code byte[]}, {@link StreamWrapper}, and
+   * {@link ByteStreamWriter}.
+   * @param value input value to format
+   * @return formatted value
+   * @throws IOException in case there's underflow in the input value
+   * @deprecated prefer {@link #toPGLiteral(Object, SqlSerializationContext)} to clarify the behaviour
+   *     regarding {@link InputStream} objects
+   */
+  @Deprecated
+  public static String toPGLiteral(Object value) throws IOException {
+    return toPGLiteral(value, SqlSerializationContext.of(true, true));
+  }
+
+  /**
+   * Formats input object as {@code bytea} literal like {@code '\xcafebabe'::bytea}.
+   * The following inputs are supported: {@code byte[]}, {@link StreamWrapper}, and
+   * {@link ByteStreamWriter}.
+   * @param value input value to format
+   * @param context specifies configuration for converting the parameters to string
+   * @return formatted value
+   * @throws IOException in case there's underflow in the input value
+   */
+  public static String toPGLiteral(Object value, SqlSerializationContext context) throws IOException {
+    if (value instanceof byte[]) {
+      byte[] bytes = (byte[]) value;
+      StringBuilder sb = new StringBuilder(bytes.length * 2 + 11);
+      sb.append("'\\x");
+      appendHexString(sb, bytes, 0, bytes.length);
+      sb.append("'::bytea");
+      return sb.toString();
+    }
+
+    if (value instanceof StreamWrapper) {
+      StreamWrapper sw = (StreamWrapper) value;
+      byte[] bytes = sw.getBytes();
+      if (context.getIdempotent() && bytes == null) {
+        // Note: we skip reading the stream wrapper only in case it wraps a stream
+        // If StreamWrapper wraps a byte[] instance, then it is fine to serialize it
+        return "?";
+      }
+
+      int length = sw.getLength();
+      StringBuilder sb = new StringBuilder(length * 2 + 11);
+      sb.append("'\\x");
+      if (bytes != null) {
+        appendHexString(sb, bytes, sw.getOffset(), length);
+      } else if (length > 0) {
+        InputStream str = sw.getStream();
+        byte[] streamBuffer = new byte[8192];
+        int read;
+        while (length > 0) {
+          read = str.read(streamBuffer, 0, Math.min(length, streamBuffer.length));
+          if (read == -1) {
+            break;
+          }
+          appendHexString(sb, streamBuffer, 0, read);
+          length -= read;
+        }
+        if (length > 0) {
+          throw new EOFException(
+              GT.tr("Premature end of input stream, expected {0} bytes, but only read {1}.",
+                  sw.getLength(), sw.getLength() - length));
+        }
+      }
+      sb.append("'::bytea");
+      return sb.toString();
+    }
+
+    if (value instanceof ByteStreamWriter) {
+      ByteStreamWriter bsw = (ByteStreamWriter) value;
+      int len = bsw.getLength();
+      StringBuilder sb = new StringBuilder(len * 2 + 11);
+      sb.append("'\\x");
+      FixedLengthOutputStream str = new FixedLengthOutputStream(len, new OutputStream() {
+        @Override
+        public void write(int b) {
+          sb.append(Character.forDigit((b >> 4) & 0xf, 16));
+          sb.append(Character.forDigit(b & 0xf, 16));
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+          appendHexString(sb, b, off, len);
+        }
+      });
+      bsw.writeTo(() -> str);
+      for (int i = 0; i < str.remaining(); i++) {
+        sb.append("00");
+      }
+      sb.append("'::bytea");
+      return sb.toString();
+    }
+
+    throw new IllegalArgumentException(
+        GT.tr("Can't convert {0} to {1} literal", value.getClass(), "bytea"));
   }
 }

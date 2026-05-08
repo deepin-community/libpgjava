@@ -12,7 +12,7 @@ import org.postgresql.copy.CopyOut;
 import java.sql.SQLException;
 
 /**
- * <p>Anticipated flow of a COPY TO STDOUT operation:</p>
+ * Anticipated flow of a COPY TO STDOUT operation:
  *
  * <p>CopyManager.copyOut() -&gt;QueryExecutor.startCopy() - sends given query to server
  * -&gt;processCopyResults(): - receives CopyOutResponse from Server - creates new CopyOutImpl
@@ -28,6 +28,7 @@ import java.sql.SQLException;
 public class CopyOutImpl extends CopyOperationImpl implements CopyOut {
   private byte /* @Nullable */ [] currentDataRow;
 
+  @Override
   public byte /* @Nullable */ [] readFromCopy() throws SQLException {
     return readFromCopy(true);
   }
@@ -39,6 +40,7 @@ public class CopyOutImpl extends CopyOperationImpl implements CopyOut {
     return currentDataRow;
   }
 
+  @Override
   protected void handleCopydata(byte[] data) {
     currentDataRow = data;
   }
